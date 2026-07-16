@@ -1278,6 +1278,100 @@ function ManualManager({ manuals, tests, saveManuals, notify }) {
                             React.createElement("button", { className: "btn danger", onClick: () => removeManual(m.id) },
                                 React.createElement(Icon, { name: "trash", size: 14 })))))))))))));
 }
+function buildAccountSheetHtml(className, siteUrl, appsScriptUrl, password) {
+    const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const today = new Date().toLocaleDateString("ja-JP");
+    const html = `<!DOCTYPE html>
+<html lang="ja"><head><meta charset="UTF-8">
+<title>${esc(className)} 利用案内</title>
+<script src="https://unpkg.com/qrcodejs@1.0.0/qrcode.min.js"><\/script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Zen+Old+Mincho:wght@700&family=Zen+Kaku+Gothic+New:wght@400;600;700;900&display=swap');
+  @page{ size:A4; margin:16mm; }
+  body{ font-family:'Zen Kaku Gothic New', sans-serif; padding:0; margin:0; color:#1C2541; }
+  .toolbar{ padding:14px 18px; }
+  .toolbar button{ font-family:inherit; font-size:14px; padding:8px 18px; background:#1C2541; color:#fff; border:none; border-radius:4px; cursor:pointer; }
+  .sheet{ padding:0 18px; max-width:640px; }
+  .sheet-head{ border-bottom:2px solid #1C2541; padding-bottom:10px; margin-bottom:18px; display:flex; justify-content:space-between; align-items:flex-end; gap:16px; }
+  .sheet-eyebrow{ font-size:11px; letter-spacing:.18em; color:#5B6685; }
+  .sheet-title{ font-family:'Zen Old Mincho', serif; font-size:24px; font-weight:700; margin-top:4px; }
+  .sheet-date{ font-size:11px; color:#5B6685; margin-top:6px; }
+  .qr-block{ text-align:center; flex-shrink:0; }
+  .qr-block #qrcode{ display:inline-block; }
+  .qr-caption{ font-size:10px; color:#5B6685; margin-top:4px; }
+  h2.sec{ font-size:14px; font-weight:700; margin:22px 0 10px; border-left:4px solid #1C2541; padding-left:8px; }
+  table.acc{ border-collapse:collapse; width:100%; margin-bottom:6px; }
+  table.acc th, table.acc td{ border:1px solid #ccc; padding:8px 10px; font-size:13px; text-align:left; }
+  table.acc th{ background:#eee; width:150px; white-space:nowrap; }
+  table.acc td{ word-break:break-all; font-family:'JetBrains Mono',monospace; font-size:12px; }
+  ol{ font-size:13px; line-height:1.9; padding-left:20px; margin:0 0 14px; }
+  ul{ font-size:13px; line-height:1.9; padding-left:20px; margin:0 0 14px; }
+  .note{ font-size:11.5px; color:#5B6685; }
+  .warn{ background:#F7E7E7; color:#7A2E36; border:1px solid #E9C0C4; border-radius:4px; padding:10px 14px; font-size:12px; line-height:1.7; margin:14px 0; }
+  @media print{ .toolbar{ display:none; } }
+</style></head>
+<body>
+  <div class="toolbar"><button onclick="window.print()">印刷 / PDFとして保存</button></div>
+  <div class="sheet">
+    <div class="sheet-head">
+      <div>
+        <div class="sheet-eyebrow">SOUGAKU ZEMI</div>
+        <div class="sheet-title">${esc(className)}　利用案内</div>
+        <div class="sheet-date">出力日：${esc(today)}</div>
+      </div>
+      <div class="qr-block">
+        <div id="qrcode"></div>
+        <div class="qr-caption">スマホで読み取ってアクセス</div>
+      </div>
+    </div>
+
+    <h2 class="sec">アカウント情報</h2>
+    <table class="acc">
+      <tr><th>サイトURL</th><td>${esc(siteUrl)}</td></tr>
+      <tr><th>管理者パスワード</th><td>${esc(password || "未設定")}</td></tr>
+      <tr><th>Apps Script URL</th><td>${esc(appsScriptUrl)}</td></tr>
+    </table>
+    <div class="warn">この用紙には管理者パスワードが記載されています。生徒や保護者の目に触れない場所で保管してください。</div>
+
+    <h2 class="sec">先生用：管理画面の使い方</h2>
+    <ol>
+      <li>上記の「サイトURL」を開く（またはQRコードを読み取る）</li>
+      <li>「先生用管理画面」を選び、上記の「管理者パスワード」でログインする</li>
+      <li>「生徒管理」「テスト管理」「採点入力」から、必要な情報を登録する</li>
+      <li>「成績分析」「個人帳票」から、ランキングや個人成績のPDFを出力できる</li>
+    </ol>
+
+    <h2 class="sec">生徒用：成績ページの使い方</h2>
+    <ol>
+      <li>上記の「サイトURL」を開く（またはQRコードを読み取る）</li>
+      <li>「生徒用成績ページ」を選ぶ</li>
+      <li>一覧から自分の氏名を選び、PIN（先生から伝えられた合言葉）を入力してログインする</li>
+    </ol>
+    <div class="note">生徒のPINは、生徒ごとに「生徒管理」タブで確認・変更できます。</div>
+  </div>
+
+  <script>
+    try {
+      new QRCode(document.getElementById("qrcode"), {
+        text: ${JSON.stringify(siteUrl)},
+        width: 110,
+        height: 110,
+        colorDark: "#1C2541",
+        colorLight: "#ffffff",
+      });
+    } catch (e) {
+      document.getElementById("qrcode").innerText = "QRコードを読み込めませんでした";
+    }
+  <\/script>
+</body></html>`;
+    const win = window.open("", "_blank");
+    if (!win) {
+        alert("ポップアップがブロックされました。ブラウザのポップアップ許可設定を確認してください。");
+        return;
+    }
+    win.document.write(html);
+    win.document.close();
+}
 function PasswordSettings({ currentPass, saveTeacherPass, notify }) {
     const [oldPw, setOldPw] = useState("");
     const [newPw, setNewPw] = useState("");
@@ -1303,22 +1397,30 @@ function PasswordSettings({ currentPass, saveTeacherPass, notify }) {
         setNewPw2("");
         notify("パスワードを変更しました");
     }
-    return (React.createElement("div", { className: "card", style: { maxWidth: 420 } },
-        React.createElement("h2", null, "\u7BA1\u7406\u8005\u30D1\u30B9\u30EF\u30FC\u30C9\u306E\u5909\u66F4"),
-        React.createElement("div", { className: "sub" }, "\u751F\u5F92\u306B\u306F\u5171\u6709\u3057\u306A\u3044\u3067\u304F\u3060\u3055\u3044"),
-        React.createElement("div", { className: "field" },
-            React.createElement("label", null, "\u73FE\u5728\u306E\u30D1\u30B9\u30EF\u30FC\u30C9"),
-            React.createElement("input", { type: "password", value: oldPw, onChange: (e) => setOldPw(e.target.value) })),
-        React.createElement("div", { className: "field" },
-            React.createElement("label", null, "\u65B0\u3057\u3044\u30D1\u30B9\u30EF\u30FC\u30C9"),
-            React.createElement("input", { type: "password", value: newPw, onChange: (e) => setNewPw(e.target.value) })),
-        React.createElement("div", { className: "field" },
-            React.createElement("label", null, "\u65B0\u3057\u3044\u30D1\u30B9\u30EF\u30FC\u30C9\uFF08\u78BA\u8A8D\uFF09"),
-            React.createElement("input", { type: "password", value: newPw2, onChange: (e) => setNewPw2(e.target.value) })),
-        React.createElement("button", { className: "btn", onClick: change },
-            React.createElement(Icon, { name: "check", size: 14 }),
-            "\u5909\u66F4\u3059\u308B"),
-        error && React.createElement("div", { className: "errmsg" }, error)));
+    return (React.createElement("div", null,
+        React.createElement("div", { className: "card", style: { maxWidth: 420 } },
+            React.createElement("h2", null, "\u7BA1\u7406\u8005\u30D1\u30B9\u30EF\u30FC\u30C9\u306E\u5909\u66F4"),
+            React.createElement("div", { className: "sub" }, "\u751F\u5F92\u306B\u306F\u5171\u6709\u3057\u306A\u3044\u3067\u304F\u3060\u3055\u3044"),
+            React.createElement("div", { className: "field" },
+                React.createElement("label", null, "\u73FE\u5728\u306E\u30D1\u30B9\u30EF\u30FC\u30C9"),
+                React.createElement("input", { type: "password", value: oldPw, onChange: (e) => setOldPw(e.target.value) })),
+            React.createElement("div", { className: "field" },
+                React.createElement("label", null, "\u65B0\u3057\u3044\u30D1\u30B9\u30EF\u30FC\u30C9"),
+                React.createElement("input", { type: "password", value: newPw, onChange: (e) => setNewPw(e.target.value) })),
+            React.createElement("div", { className: "field" },
+                React.createElement("label", null, "\u65B0\u3057\u3044\u30D1\u30B9\u30EF\u30FC\u30C9\uFF08\u78BA\u8A8D\uFF09"),
+                React.createElement("input", { type: "password", value: newPw2, onChange: (e) => setNewPw2(e.target.value) })),
+            React.createElement("button", { className: "btn", onClick: change },
+                React.createElement(Icon, { name: "check", size: 14 }),
+                "\u5909\u66F4\u3059\u308B"),
+            error && React.createElement("div", { className: "errmsg" }, error)),
+        React.createElement("div", { className: "card", style: { maxWidth: 420 } },
+            React.createElement("h2", null, "\u5229\u7528\u6848\u5185\u30B7\u30FC\u30C8\uFF08PDF\u51FA\u529B\uFF09"),
+            React.createElement("div", { className: "sub" }, "\u3053\u306E\u30AF\u30E9\u30B9\u306EURL\u30FB\u30D1\u30B9\u30EF\u30FC\u30C9\u30FBApps Script URL\u3068\u3001\u57FA\u672C\u7684\u306A\u4F7F\u3044\u65B9\u3092\u307E\u3068\u3081\u305F1\u679A\u306E\u30B7\u30FC\u30C8\u3092\u51FA\u529B\u3057\u307E\u3059\u3002"),
+            React.createElement("button", { className: "btn ghost", onClick: () => buildAccountSheetHtml(document.title, window.location.href, typeof APPS_SCRIPT_URL !== "undefined" ? APPS_SCRIPT_URL : "", currentPass) },
+                React.createElement(Icon, { name: "clipboard", size: 14 }),
+                "\u30D7\u30EC\u30D3\u30E5\u30FC\u3092\u958B\u304F\uFF08\u65B0\u3057\u3044\u30BF\u30D6\uFF09"),
+            React.createElement("div", { className: "note", style: { marginTop: 10, fontSize: 11.5, color: "var(--ink-soft)" } }, "\u65B0\u3057\u3044\u30BF\u30D6\u3067\u958B\u3044\u305F\u30DA\u30FC\u30B8\u306E\u300C\u5370\u5237 / PDF\u3068\u3057\u3066\u4FDD\u5B58\u300D\u304B\u3089\u3001\u7D19\u3078\u306E\u5370\u5237\u307E\u305F\u306FPDF\u4FDD\u5B58\u304C\u3067\u304D\u307E\u3059\u3002\u7BA1\u7406\u8005\u30D1\u30B9\u30EF\u30FC\u30C9\u304C\u8A18\u8F09\u3055\u308C\u308B\u306E\u3067\u3001\u4FDD\u7BA1\u5834\u6240\u306B\u3054\u6CE8\u610F\u304F\u3060\u3055\u3044\u3002"))));
 }
 function exportStudentsToExcel(students) {
     if (!window.XLSX) {
@@ -1343,6 +1445,150 @@ function exportStudentsToExcel(students) {
     const today = new Date().toISOString().slice(0, 10);
     XLSX.writeFile(wb, `生徒一覧_${today}.xlsx`);
 }
+function buildStudentAccountCardsHtml(students, siteUrl, className) {
+    const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const cardsHtml = students.map((s, i) => `
+    <div class="id-card">
+      <div class="id-band"></div>
+      <div class="id-body">
+        <div class="id-top">
+          <div class="id-left">
+            <div class="id-eyebrow">SOUGAKU ZEMI</div>
+            <div class="id-classname">${esc(className)}</div>
+          </div>
+          <div class="id-right">
+            <div class="id-qr" id="qr_${i}"></div>
+            <div class="id-brand">
+              <img class="id-logo" src="${LOGO_ICON}" alt="" />
+              <div class="id-brand-text">確認テスト<br/>成績管理システム</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="id-name">${esc(s.name)}</div>
+        <div class="id-school">${esc(s.highSchool || "")}</div>
+
+        <div class="id-pin-row">
+          <div class="id-pin-label">PIN</div>
+          <div class="id-pin-box">${esc(s.pin)}</div>
+        </div>
+
+        <div class="id-divider"></div>
+
+        <div class="id-usage">
+          <div class="id-usage-title">このサイトでできること</div>
+          <ul class="id-usage-list">
+            <li>自分の成績推移をグラフで確認</li>
+            <li>クラス平均との差をチェック</li>
+            <li>苦手分野・過去問解説を見る</li>
+          </ul>
+        </div>
+
+        <div class="id-foot">氏名を選び、上のPINでログインしてください</div>
+      </div>
+    </div>
+  `).join("");
+    const qrInitHtml = students.map((s, i) => `try { new QRCode(document.getElementById("qr_${i}"), { text: ${JSON.stringify(siteUrl)}, width: 50, height: 50, colorDark: "#1C2541", colorLight: "#F6F4EE" }); } catch(e){}`).join("\n");
+    const html = `<!DOCTYPE html>
+<html lang="ja"><head><meta charset="UTF-8">
+<title>${esc(className)} 生徒アカウントカード</title>
+<script src="https://unpkg.com/qrcodejs@1.0.0/qrcode.min.js"><\/script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Zen+Old+Mincho:wght@700;900&family=Zen+Kaku+Gothic+New:wght@400;600;700;900&family=JetBrains+Mono:wght@600;700&display=swap');
+  @page{ size:A4; margin:10mm; }
+  *{ box-sizing:border-box; }
+  body{ font-family:'Zen Kaku Gothic New', sans-serif; padding:0; margin:0; color:#1C2541; background:#fff; }
+  .toolbar{ padding:14px 18px; }
+  .toolbar button{ font-family:inherit; font-size:14px; padding:8px 18px; background:#1C2541; color:#fff; border:none; border-radius:4px; cursor:pointer; }
+  .toolbar .count{ font-size:12px; color:#5B6685; margin-left:12px; }
+  .grid{ display:flex; flex-wrap:wrap; gap:5mm; padding:0 6mm; }
+
+  .id-card{
+    width:88mm; position:relative; overflow:hidden;
+    border:1px solid #1C2541;
+    background-color:#F6F4EE;
+    background-image:
+      linear-gradient(rgba(28,37,65,0.07) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(28,37,65,0.07) 1px, transparent 1px);
+    background-size:3mm 3mm;
+    page-break-inside:avoid;
+  }
+  .id-band{ width:100%; height:2.2mm; background:linear-gradient(90deg,#1C2541,#3E5C87); }
+  .id-body{ padding:4.5mm 6mm 5mm; }
+  .id-top{ display:flex; justify-content:space-between; align-items:flex-start; }
+  .id-left{ padding-top:1mm; }
+  .id-eyebrow{ font-family:'JetBrains Mono',monospace; font-size:7.5px; letter-spacing:.16em; color:#5B6685; }
+  .id-classname{ font-size:9.5px; font-weight:700; color:#1C2541; margin-top:1.5px; }
+  .id-right{ display:flex; flex-direction:column; align-items:center; gap:2mm; flex-shrink:0; }
+  .id-qr{ width:50px; height:50px; background:#F6F4EE; border:1px solid #DCD8CC; }
+  .id-brand{ display:flex; flex-direction:column; align-items:center; text-align:center; }
+  .id-logo{ width:16px; height:16px; opacity:.9; }
+  .id-brand-text{ font-size:6px; color:#8891AA; line-height:1.3; margin-top:2px; letter-spacing:.02em; white-space:nowrap; }
+  .id-name{ font-family:'Zen Old Mincho',serif; font-size:19px; font-weight:900; margin-top:3.5mm; letter-spacing:.02em; line-height:1.2; }
+  .id-school{ font-size:9px; color:#5B6685; margin-top:1.2mm; }
+  .id-pin-row{ display:flex; align-items:center; gap:6px; margin-top:3mm; }
+  .id-pin-label{ font-family:'JetBrains Mono',monospace; font-size:8.5px; color:#5B6685; letter-spacing:.1em; }
+  .id-pin-box{
+    font-family:'JetBrains Mono',monospace; font-size:14px; font-weight:700; letter-spacing:2px;
+    background:#1C2541; color:#fff; padding:2.5px 11px; border-radius:2px;
+  }
+  .id-divider{ border-top:1px dashed #C9C4B4; margin:3mm 0 2.5mm; }
+  .id-usage-title{ font-size:7.5px; font-weight:700; color:#5B6685; letter-spacing:.05em; margin-bottom:1.3mm; }
+  .id-usage-list{ margin:0; padding-left:3.6mm; font-size:7.5px; color:#3A4258; line-height:1.6; }
+  .id-usage-list li{ margin-bottom:0.3mm; }
+  .id-foot{ font-size:7px; color:#8891AA; margin-top:2.8mm; }
+
+  @media print{ .toolbar{ display:none; } }
+</style></head>
+<body>
+  <div class="toolbar">
+    <button onclick="window.print()">印刷 / PDFとして保存</button>
+    <span class="count">${students.length}名分</span>
+  </div>
+  <div class="grid">
+    ${cardsHtml}
+  </div>
+  <script>
+    ${qrInitHtml}
+  <\/script>
+</body></html>`;
+    const win = window.open("", "_blank");
+    if (!win) {
+        alert("ポップアップがブロックされました。ブラウザのポップアップ許可設定を確認してください。");
+        return;
+    }
+    win.document.write(html);
+    win.document.close();
+}
+function StudentAccountCards({ students }) {
+    var _a;
+    const active = students.filter((s) => !s.isGraduate);
+    const [studentId, setStudentId] = useState(((_a = active[0]) === null || _a === void 0 ? void 0 : _a.id) || "");
+    if (!active.length)
+        return null;
+    return (React.createElement("div", { className: "card" },
+        React.createElement("h2", null, "\u751F\u5F92\u30A2\u30AB\u30A6\u30F3\u30C8\u30AB\u30FC\u30C9\uFF08PDF\u51FA\u529B\uFF09"),
+        React.createElement("div", { className: "sub" }, "\u30B5\u30A4\u30C8\u30C7\u30B6\u30A4\u30F3\u306B\u5408\u308F\u305B\u305F\u30AB\u30FC\u30C9\u5F62\u5F0F\u3067\u3001\u6C0F\u540D\u30FBPIN\u30FBQR\u30B3\u30FC\u30C9\u3092\u51FA\u529B\u3057\u307E\u3059\u3002\u5207\u308A\u53D6\u3063\u3066\u914D\u5E03\u3067\u304D\u307E\u3059\u3002"),
+        React.createElement("div", { className: "field", style: { maxWidth: 360 } },
+            React.createElement("label", null, "\u5BFE\u8C61\u306E\u751F\u5F92"),
+            React.createElement("select", { value: studentId, onChange: (e) => setStudentId(e.target.value) }, active.map((s) => React.createElement("option", { key: s.id, value: s.id }, s.name)))),
+        React.createElement("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" } },
+            React.createElement("button", { className: "btn", onClick: () => {
+                    const s = active.find((x) => x.id === studentId);
+                    if (s)
+                        buildStudentAccountCardsHtml([s], window.location.href, document.title);
+                } },
+                React.createElement(Icon, { name: "clipboard", size: 14 }),
+                "\u3053\u306E\u751F\u5F92\u306E\u30AB\u30FC\u30C9\u3092\u51FA\u529B"),
+            React.createElement("button", { className: "btn ghost", onClick: () => buildStudentAccountCardsHtml(active, window.location.href, document.title) },
+                React.createElement(Icon, { name: "users", size: 14 }),
+                "\u5728\u7C4D\u751F \u5168\u54E1\u3092\u307E\u3068\u3081\u3066\u51FA\u529B\uFF08",
+                active.length,
+                "\u540D\uFF09")),
+        React.createElement("div", { className: "note", style: { marginTop: 10, fontSize: 11.5, color: "var(--ink-soft)" } }, "\u65B0\u3057\u3044\u30BF\u30D6\u3067\u30D7\u30EC\u30D3\u30E5\u30FC\u304C\u958B\u304D\u307E\u3059\u3002\u300C\u5370\u5237 / PDF\u3068\u3057\u3066\u4FDD\u5B58\u300D\u304B\u3089\u3001\u7D19\u3078\u306E\u5370\u5237\u3084PDF\u4FDD\u5B58\u304C\u3067\u304D\u307E\u3059\u3002\u30AB\u30FC\u30C9\u306B\u306FPIN\u304C\u8A18\u8F09\u3055\u308C\u308B\u306E\u3067\u3001\u8A72\u5F53\u751F\u5F92\u672C\u4EBA\u306B\u306E\u307F\u304A\u6E21\u3057\u304F\u3060\u3055\u3044\u3002")));
+}
+
+
 function StudentManager({ students, saveStudents, notify }) {
     const blank = { name: "", highSchool: "", targetUniv: "", pin: "", isGraduate: false, admittedUniv: "", gradYear: "" };
     const [form, setForm] = useState(blank);
@@ -1441,7 +1687,8 @@ function StudentManager({ students, saveStudents, notify }) {
                             React.createElement("button", { className: "btn ghost", style: { padding: "5px 9px" }, onClick: () => startEdit(s) },
                                 React.createElement(Icon, { name: "pen", size: 13 })),
                             React.createElement("button", { className: "btn danger", onClick: () => removeStudent(s.id) },
-                                React.createElement(Icon, { name: "trash", size: 14 })))))))))))));
+                                React.createElement(Icon, { name: "trash", size: 14 }))))))))))),
+        React.createElement(StudentAccountCards, { students: students })));
 }
 function TestManager({ tests, saveTests, saveScoresForTest, scores, notify }) {
     const blank = { name: "", date: "", maxScore: 100, tagsInput: "", pdfUrl: "", videoUrl: "", description: "", course: "" };
