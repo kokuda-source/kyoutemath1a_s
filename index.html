@@ -226,6 +226,8 @@ function Icon({ name, size = 14, style }) {
         pen: "M12 20h9M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4 12.5-12.5z",
         logout: "M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9",
         book: "M4 19.5A2.5 2.5 0 016.5 17H20M4 4.5A2.5 2.5 0 016.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15z",
+        upload: "M12 19V5M5 12l7-7 7 7M4 21h16",
+        refresh: "M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15",
     };
     return (React.createElement("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", style: style },
         React.createElement("path", { d: paths[name] || "" })));
@@ -298,6 +300,115 @@ function isAbsentEntry(scores, studentId, testId) {
 }
 function manualsFor(manuals, tag) {
     return manuals.filter((m) => m.tag === tag);
+}
+/* ---- 設問別自動採点（フォーム連携）関連ヘルパー ---- */
+function normalizeAnswer(s) {
+    return String(s == null ? "" : s)
+        .trim()
+        .replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
+        .replace(/[Ａ-Ｚａ-ｚ]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
+        .replace(/\s+/g, "")
+        .toLowerCase();
+}
+function parseCsv(text) {
+    const rows = [];
+    let row = [], field = "", inQuotes = false;
+    const s = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+    for (let i = 0; i < s.length; i++) {
+        const c = s[i];
+        if (inQuotes) {
+            if (c === '"') {
+                if (s[i + 1] === '"') { field += '"'; i++; }
+                else { inQuotes = false; }
+            }
+            else
+                field += c;
+        }
+        else if (c === '"')
+            inQuotes = true;
+        else if (c === ',') { row.push(field); field = ""; }
+        else if (c === '\n') { row.push(field); rows.push(row); row = []; field = ""; }
+        else
+            field += c;
+    }
+    if (field.length || row.length) { row.push(field); rows.push(row); }
+    if (!rows.length)
+        return [];
+    const header = rows[0].map((h) => h.trim());
+    return rows.slice(1).filter((r) => r.some((v) => v.trim() !== "")).map((r) => {
+        const obj = {};
+        header.forEach((h, i) => { obj[h] = r[i] != null ? r[i] : ""; });
+        return obj;
+    });
+}
+function gradeFormRow(rowObj, test) {
+    const qResults = {};
+    let score = 0;
+    (test.questions || []).forEach((q) => {
+        const raw = rowObj[q.no];
+        const correct = raw != null && normalizeAnswer(raw) === normalizeAnswer(q.answer) && normalizeAnswer(q.answer) !== "";
+        qResults[q.id] = correct;
+        if (correct)
+            score += Number(q.maxScore) || 0;
+    });
+    return { score, qResults };
+}
+async function importFormResponses(test, students, scores, saveScoresForTest, notify) {
+    if (!test.formCsvUrl) {
+        notify("フォームCSVのURLが設定されていません");
+        return;
+    }
+    if (!test.questions || !test.questions.length) {
+        notify("設問（配点・正解）が登録されていません");
+        return;
+    }
+    try {
+        const res = await fetch(test.formCsvUrl);
+        const text = await res.text();
+        const rows = parseCsv(text);
+        const idCol = test.formIdCol || "氏名";
+        let matched = 0, unmatched = [];
+        const existing = scores.filter((sc) => sc.testId === test.id);
+        const byStudent = {};
+        existing.forEach((sc) => { byStudent[sc.studentId] = sc; });
+        rows.forEach((r) => {
+            const name = (r[idCol] || "").trim();
+            if (!name)
+                return;
+            const student = students.find((s) => s.name.trim() === name);
+            if (!student) {
+                unmatched.push(name);
+                return;
+            }
+            const { score, qResults } = gradeFormRow(r, test);
+            byStudent[student.id] = { studentId: student.id, testId: test.id, score, qResults, source: "form" };
+            matched++;
+        });
+        const list = Object.values(byStudent);
+        await saveScoresForTest(test.id, list);
+        notify(`フォーム回答を取り込みました（${matched}件${unmatched.length ? "／未一致" + unmatched.length + "件" : ""}）`);
+        if (unmatched.length)
+            console.warn("氏名が一致しなかった回答:", unmatched);
+    }
+    catch (e) {
+        console.error(e);
+        notify("フォーム回答の取り込みに失敗しました（CSV URLをご確認ください）");
+    }
+}
+function computeQuestionStats(scores, students, test) {
+    const activeIds = students.filter((s) => !s.isGraduate).map((s) => s.id);
+    const relevant = scores.filter((sc) => sc.testId === test.id && activeIds.includes(sc.studentId) && sc.qResults);
+    return (test.questions || []).map((q) => {
+        let correct = 0, total = 0;
+        relevant.forEach((sc) => {
+            if (sc.qResults[q.id] != null) {
+                total++;
+                if (sc.qResults[q.id])
+                    correct++;
+            }
+        });
+        return { q, correct, total, rate: total ? (correct / total) * 100 : null };
+    });
 }
 function computeWeakUnits(scores, students, tests, studentId) {
     const activeIds = students.filter((s) => !s.isGraduate).map((s) => s.id);
@@ -773,7 +884,7 @@ function RankingExport({ stats, students }) {
         React.createElement("div", { className: "note", style: { marginTop: 10, fontSize: 11.5, color: "var(--ink-soft)" } }, "\u65B0\u3057\u3044\u30BF\u30D6\u3067\u5E33\u7968\u304C\u958B\u304D\u307E\u3059\u3002\u30BF\u30D6\u5185\u306E\u300C\u5370\u5237 / PDF\u3068\u3057\u3066\u4FDD\u5B58\u300D\u30DC\u30BF\u30F3\u304B\u3089\u3001\u5370\u5237\u30C0\u30A4\u30A2\u30ED\u30B0\u306E\u51FA\u529B\u5148\u3092\u300CPDF\u306B\u4FDD\u5B58\u300D\u306B\u9078\u3093\u3067\u304F\u3060\u3055\u3044\u3002\u672A\u53D7\u9A13\u8005\u306F\u3042\u3089\u304B\u3058\u3081\u9664\u5916\u3055\u308C\u3066\u3044\u307E\u3059\u3002")));
 }
 
-function TestAnalytics({ students, tests, scores }) {
+function TestAnalytics({ students, tests, scores, onRefresh, refreshing }) {
     var _a;
     const courses = Array.from(new Set(tests.map((t) => t.course).filter(Boolean))).sort();
     const [courseFilter, setCourseFilter] = useState("");
@@ -794,6 +905,10 @@ function TestAnalytics({ students, tests, scores }) {
             React.createElement("div", { className: "empty" }, "\u5148\u306B\u300C\u30C6\u30B9\u30C8\u7BA1\u7406\u300D\u304B\u3089\u30C6\u30B9\u30C8\u3092\u767B\u9332\u3057\u3066\u304F\u3060\u3055\u3044"));
     }
     return (React.createElement("div", null,
+        onRefresh && (React.createElement("div", { style: { display: "flex", justifyContent: "flex-end", marginBottom: 12 } },
+            React.createElement("button", { className: "btn ghost", disabled: !!refreshing, onClick: () => onRefresh(false) },
+                React.createElement(Icon, { name: "refresh", size: 14 }),
+                refreshing ? "更新中…" : "最新のデータに更新"))),
         courses.length > 0 && (React.createElement("div", { className: "card", style: { marginBottom: 18 } },
             React.createElement("div", { className: "field", style: { maxWidth: 320, marginBottom: 0 } },
                 React.createElement("label", null, "\u30B3\u30FC\u30B9\u3067\u7D5E\u308A\u8FBC\u3080"),
@@ -876,7 +991,24 @@ function TestAnalytics({ students, tests, scores }) {
                             React.createElement("td", { className: "ss-mono" }, "\u2015"),
                             React.createElement("td", null, a.name),
                             React.createElement("td", { colSpan: 2 }, "\u672A\u53D7\u9A13"))))))),
-                React.createElement(RankingExport, { stats: stats, students: students })))),
+                React.createElement(RankingExport, { stats: stats, students: students }),
+                stats.test.questions && stats.test.questions.length > 0 && (React.createElement("div", { style: { marginTop: 26 } },
+                    React.createElement("div", { style: { marginBottom: 8, fontSize: 12.5, color: "var(--ink-soft)", fontWeight: 600 } }, "\u8A2D\u554F\u5225\u6B63\u7B54\u7387\uFF08\u554F\u984C\u5206\u6790\uFF09"),
+                    React.createElement("div", { className: "tbl-wrap" },
+                        React.createElement("table", null,
+                            React.createElement("thead", null,
+                                React.createElement("tr", null,
+                                    React.createElement("th", null, "\u8A2D\u554F"),
+                                    React.createElement("th", null, "\u914D\u70B9"),
+                                    React.createElement("th", null, "\u6B63\u7B54"),
+                                    React.createElement("th", null, "\u6B63\u7B54\u7387"),
+                                    React.createElement("th", null, "\u5FA9\u7FD2\u30EA\u30F3\u30AF"))),
+                            React.createElement("tbody", null, computeQuestionStats(scores, students, stats.test).map(({ q, correct, total, rate }) => (React.createElement("tr", { key: q.id },
+                                React.createElement("td", null, q.no),
+                                React.createElement("td", { className: "ss-mono" }, q.maxScore),
+                                React.createElement("td", { className: "ss-mono" }, total ? correct + "/" + total : "―"),
+                                React.createElement("td", { className: "ss-mono " + (rate != null && rate < 50 ? "delta down" : "") }, rate == null ? "―" : fmt1(rate) + "%"),
+                                React.createElement("td", null, q.practiceUrl ? React.createElement("a", { href: q.practiceUrl, target: "_blank", rel: "noreferrer", style: { color: "var(--ink)" } }, q.practiceLabel || "開く") : "―")))))))))))),
         React.createElement("div", { className: "card" },
             React.createElement("div", { className: "section-title" },
                 React.createElement("span", { className: "n" }, "2"),
@@ -1133,7 +1265,7 @@ function StudentReportExport({ students, tests, scores, manuals }) {
         React.createElement("div", { className: "note", style: { marginTop: 10, fontSize: 11.5, color: "var(--ink-soft)" } }, "\u65B0\u3057\u3044\u30BF\u30D6\u3067\u30D7\u30EC\u30D3\u30E5\u30FC\u304C\u958B\u304D\u307E\u3059\u3002\u300C\u5370\u5237 / PDF\u3068\u3057\u3066\u4FDD\u5B58\u300D\u304B\u3089\u7D19\u3078\u306E\u5370\u5237\u3001\u307E\u305F\u306FPDF\u4FDD\u5B58\u304C\u3067\u304D\u307E\u3059\u3002\u5168\u54E1\u5206\u3092\u307E\u3068\u3081\u3066\u51FA\u529B\u3059\u308B\u3068\u3001\u751F\u5F92\u3054\u3068\u306B\u81EA\u52D5\u3067\u6539\u30DA\u30FC\u30B8\u3055\u308C\u307E\u3059\u3002")));
 }
 
-function Teacher({ students, tests, scores, manuals, saveStudents, saveTests, saveScoresForTest, saveManuals, onBack, notify, teacherPass, saveTeacherPass }) {
+function Teacher({ students, tests, scores, manuals, saveStudents, saveTests, saveScoresForTest, saveManuals, onBack, notify, teacherPass, saveTeacherPass, onRefresh, refreshing }) {
     const [tab, setTab] = useState("students");
     return (React.createElement("div", { className: "ss-wrap" },
         React.createElement(TopBar, { title: "\u5148\u751F\u7528\u7BA1\u7406\u753B\u9762", onBack: onBack }),
@@ -1160,9 +1292,9 @@ function Teacher({ students, tests, scores, manuals, saveStudents, saveTests, sa
                 React.createElement(Icon, { name: "lock", size: 14 }),
                 "\u8A2D\u5B9A")),
         tab === "students" && React.createElement(StudentManager, { students: students, saveStudents: saveStudents, notify: notify }),
-        tab === "tests" && React.createElement(TestManager, { tests: tests, saveTests: saveTests, saveScoresForTest: saveScoresForTest, scores: scores, notify: notify }),
+        tab === "tests" && React.createElement(TestManager, { tests: tests, saveTests: saveTests, saveScoresForTest: saveScoresForTest, scores: scores, students: students, notify: notify }),
         tab === "scoring" && React.createElement(ScoreEntry, { students: students, tests: tests, scores: scores, saveScoresForTest: saveScoresForTest, notify: notify }),
-        tab === "analytics" && React.createElement(TestAnalytics, { students: students, tests: tests, scores: scores }),
+        tab === "analytics" && React.createElement(TestAnalytics, { students: students, tests: tests, scores: scores, onRefresh: onRefresh, refreshing: refreshing }),
         tab === "reports" && React.createElement(StudentReportExport, { students: students, tests: tests, scores: scores, manuals: manuals }),
         tab === "manuals" && React.createElement(ManualManager, { manuals: manuals, tests: tests, saveManuals: saveManuals, notify: notify }),
         tab === "settings" && React.createElement(PasswordSettings, { currentPass: teacherPass, saveTeacherPass: saveTeacherPass, notify: notify })));
@@ -1808,11 +1940,49 @@ function StudentManager({ students, saveStudents, notify }) {
                                 React.createElement(Icon, { name: "trash", size: 14 }))))))))))),
         React.createElement(StudentAccountCards, { students: students })));
 }
-function TestManager({ tests, saveTests, saveScoresForTest, scores, notify }) {
+const blankQuestion = () => ({ id: uid(), no: "", maxScore: 5, answer: "", practiceUrl: "", practiceLabel: "" });
+function TestManager({ tests, saveTests, saveScoresForTest, scores, students, notify }) {
     const blank = { name: "", date: "", maxScore: 100, tagsInput: "", pdfUrl: "", videoUrl: "", description: "", course: "" };
     const [form, setForm] = useState(blank);
     const [editingId, setEditingId] = useState(null);
     const knownCourses = Array.from(new Set(tests.map((t) => t.course).filter(Boolean))).sort();
+    const sortedForQ = [...tests].sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+    const [qTestId, setQTestId] = useState("");
+    const [qFormIdCol, setQFormIdCol] = useState("氏名");
+    const [qFormCsvUrl, setQFormCsvUrl] = useState("");
+    const [questions, setQuestions] = useState([]);
+    const [importing, setImporting] = useState(false);
+    function loadQuestionSetup(id) {
+        setQTestId(id);
+        const t = tests.find((x) => x.id === id);
+        setQFormIdCol((t === null || t === void 0 ? void 0 : t.formIdCol) || "氏名");
+        setQFormCsvUrl((t === null || t === void 0 ? void 0 : t.formCsvUrl) || "");
+        setQuestions((t && t.questions && t.questions.length) ? t.questions.map((q) => ({ ...q })) : [blankQuestion()]);
+    }
+    function updateQuestion(idx, field, value) {
+        setQuestions((prev) => prev.map((q, i) => (i === idx ? { ...q, [field]: value } : q)));
+    }
+    function addQuestionRow() { setQuestions((prev) => [...prev, blankQuestion()]); }
+    function removeQuestionRow(idx) { setQuestions((prev) => prev.filter((_, i) => i !== idx)); }
+    function saveQuestionSetup() {
+        if (!qTestId)
+            return;
+        const cleaned = questions.filter((q) => q.no.trim());
+        saveTests(tests.map((t) => (t.id === qTestId ? { ...t, questions: cleaned, formCsvUrl: qFormCsvUrl.trim(), formIdCol: qFormIdCol.trim() || "氏名" } : t)));
+        notify("設問・採点設定を保存しました");
+    }
+    async function runImport() {
+        const t = tests.find((x) => x.id === qTestId);
+        if (!t)
+            return;
+        setImporting(true);
+        try {
+            await importFormResponses(t, students, scores, saveScoresForTest, notify);
+        }
+        finally {
+            setImporting(false);
+        }
+    }
     function startEdit(t) {
         setEditingId(t.id);
         setForm({
@@ -1925,7 +2095,60 @@ function TestManager({ tests, saveTests, saveScoresForTest, scores, notify }) {
                             React.createElement("button", { className: "btn ghost", style: { padding: "5px 9px" }, onClick: () => startEdit(t) },
                                 React.createElement(Icon, { name: "pen", size: 13 })),
                             React.createElement("button", { className: "btn danger", onClick: () => removeTest(t.id) },
-                                React.createElement(Icon, { name: "trash", size: 14 })))))))))))));
+                                React.createElement(Icon, { name: "trash", size: 14 }))))))))))),
+        React.createElement(QuestionSetupCard, {
+            tests: tests, sortedForQ: sortedForQ, qTestId: qTestId, loadQuestionSetup: loadQuestionSetup,
+            qFormCsvUrl: qFormCsvUrl, setQFormCsvUrl: setQFormCsvUrl, qFormIdCol: qFormIdCol, setQFormIdCol: setQFormIdCol,
+            questions: questions, updateQuestion: updateQuestion, addQuestionRow: addQuestionRow, removeQuestionRow: removeQuestionRow,
+            saveQuestionSetup: saveQuestionSetup, runImport: runImport, importing: importing,
+        })));
+}
+function QuestionSetupCard({ qTestId, sortedForQ, loadQuestionSetup, qFormCsvUrl, setQFormCsvUrl, qFormIdCol, setQFormIdCol, questions, updateQuestion, addQuestionRow, removeQuestionRow, saveQuestionSetup, runImport, importing }) {
+    const testOptions = [React.createElement("option", { key: "", value: "" }, "選択してください")].concat(sortedForQ.map((t) => React.createElement("option", { key: t.id, value: t.id }, t.name)));
+    const questionRows = questions.map((q, idx) => {
+        const cells = [
+            React.createElement("td", { key: "no" }, React.createElement("input", { value: q.no, onChange: (e) => updateQuestion(idx, "no", e.target.value), placeholder: "例）第1問(1)", style: { width: 110 } })),
+            React.createElement("td", { key: "max" }, React.createElement("input", { type: "number", value: q.maxScore, onChange: (e) => updateQuestion(idx, "maxScore", Number(e.target.value) || 0), style: { width: 64 } })),
+            React.createElement("td", { key: "ans" }, React.createElement("input", { value: q.answer, onChange: (e) => updateQuestion(idx, "answer", e.target.value), placeholder: "正解", style: { width: 90 } })),
+            React.createElement("td", { key: "url" }, React.createElement("input", { value: q.practiceUrl, onChange: (e) => updateQuestion(idx, "practiceUrl", e.target.value), placeholder: "https://...", style: { width: 160 } })),
+            React.createElement("td", { key: "label" }, React.createElement("input", { value: q.practiceLabel, onChange: (e) => updateQuestion(idx, "practiceLabel", e.target.value), placeholder: "例）図形と計量演習", style: { width: 130 } })),
+            React.createElement("td", { key: "del" }, React.createElement("button", { className: "btn danger", onClick: () => removeQuestionRow(idx) }, React.createElement(Icon, { name: "trash", size: 13 }))),
+        ];
+        return React.createElement("tr", { key: q.id }, cells);
+    });
+    const body = [
+        React.createElement("h2", { key: "h" }, "設問別自動採点（Googleフォーム連携）"),
+        React.createElement("div", { key: "sub", className: "sub" }, "共通テスト形式のテストなどで、Googleフォーム回答を自動採点して取り込みます。設問ごとに正解と配点を登録し、誤答した設問には復習用リンクを紐付けられます（「ここで躓いたらこの問題」）。"),
+        React.createElement("div", { key: "sel", className: "field", style: { maxWidth: 420 } },
+            React.createElement("label", null, "対象テスト"),
+            React.createElement("select", { value: qTestId, onChange: (e) => loadQuestionSetup(e.target.value) }, testOptions)),
+    ];
+    if (qTestId) {
+        body.push(React.createElement("div", { key: "row2", className: "row2" },
+            React.createElement("div", { className: "field" },
+                React.createElement("label", null, "フォーム回答シートのCSV公開URL（ファイル→共有→ウェブに公開→CSV）"),
+                React.createElement("input", { value: qFormCsvUrl, onChange: (e) => setQFormCsvUrl(e.target.value), placeholder: "https://docs.google.com/spreadsheets/d/e/.../pub?output=csv" })),
+            React.createElement("div", { className: "field" },
+                React.createElement("label", null, "生徒照合用列のヘッダー名（フォームの質問文）"),
+                React.createElement("input", { value: qFormIdCol, onChange: (e) => setQFormIdCol(e.target.value), placeholder: "例）氏名" }))));
+        body.push(React.createElement("div", { key: "note", className: "note", style: { fontSize: 11.5, color: "var(--ink-soft)", marginBottom: 10 } }, "※Googleフォームに「氏名（フルネーム）」質問を必須で用意し、登録済みの生徒名と完全一致するように入力してもらってください。各設問のフォーム質問文は下の「設問名」と完全一致させてください（例：第1問(1)）。"));
+        body.push(React.createElement("div", { key: "tbl", className: "tbl-wrap" },
+            React.createElement("table", null,
+                React.createElement("thead", null,
+                    React.createElement("tr", null,
+                        React.createElement("th", null, "設問名"),
+                        React.createElement("th", null, "配点"),
+                        React.createElement("th", null, "正解"),
+                        React.createElement("th", null, "復習リンクURL"),
+                        React.createElement("th", null, "リンク表示名"),
+                        React.createElement("th", null))),
+                React.createElement("tbody", null, questionRows))));
+        body.push(React.createElement("div", { key: "btns", style: { display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" } },
+            React.createElement("button", { className: "btn ghost", onClick: addQuestionRow }, React.createElement(Icon, { name: "plus", size: 13 }), "設問を追加"),
+            React.createElement("button", { className: "btn", onClick: saveQuestionSetup }, React.createElement(Icon, { name: "check", size: 13 }), "設定を保存"),
+            React.createElement("button", { className: "btn", style: { background: "var(--growth)" }, disabled: importing, onClick: runImport }, React.createElement(Icon, { name: "upload", size: 13 }), importing ? "取り込み中…" : "フォーム回答を取り込んで採点")));
+    }
+    return React.createElement("div", { className: "card" }, body);
 }
 function ScoreEntry({ students, tests, scores, saveScoresForTest, notify }) {
     var _a;
@@ -2049,7 +2272,46 @@ function StudentLogin({ students, onLogin, onBack }) {
                 React.createElement("button", { className: "btn", style: { width: "100%", justifyContent: "center" }, onClick: submit }, "\u30ED\u30B0\u30A4\u30F3"),
                 error && React.createElement("div", { className: "errmsg" }, error))))));
 }
-function StudentDashboard({ studentId, students, tests, scores, manuals, onLogout }) {
+function QuestionReviewSection({ myTests, scores, studentId }) {
+    const gradedTests = myTests.filter((t) => {
+        const sc = scores.find((s) => s.studentId === studentId && s.testId === t.id);
+        return sc && sc.qResults && (t.questions || []).length > 0;
+    });
+    if (!gradedTests.length)
+        return null;
+    const testBlocks = gradedTests.map((t) => {
+        const sc = scores.find((s) => s.studentId === studentId && s.testId === t.id);
+        const wrongQs = (t.questions || []).filter((q) => sc.qResults[q.id] === false);
+        const correctCount = (t.questions || []).length - wrongQs.length;
+        let body;
+        if (wrongQs.length === 0) {
+            body = React.createElement("div", { style: { fontSize: 12.5, color: "var(--growth)" } }, "すべての設問で正解でした！");
+        }
+        else {
+            const wrongRows = wrongQs.map((q) => {
+                const link = q.practiceUrl
+                    ? React.createElement("a", { href: q.practiceUrl, target: "_blank", rel: "noreferrer", style: { display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "var(--ink)", background: "#F1EFE8", padding: "4px 11px", borderRadius: 12, textDecoration: "none" } },
+                        React.createElement(Icon, { name: "book", size: 12 }), q.practiceLabel || "復習問題を見る")
+                    : React.createElement("span", { style: { fontSize: 11.5, color: "var(--ink-soft)" } }, "復習問題未登録");
+                return React.createElement("div", { key: q.id, style: { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" } },
+                    React.createElement("span", { className: "tagchip", style: { background: "var(--alert-bg)", color: "var(--alert)" } }, q.no),
+                    link);
+            });
+            body = React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 6 } }, wrongRows);
+        }
+        return React.createElement("div", { key: t.id, style: { marginBottom: 16, paddingBottom: 14, borderBottom: "1px solid #EFEDE5" } },
+            React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 } },
+                React.createElement("div", { style: { fontSize: 13.5, fontWeight: 700 } }, t.name),
+                React.createElement("div", { className: "ss-mono", style: { fontSize: 12, color: "var(--ink-soft)" } }, correctCount + "/" + (t.questions || []).length + "問正解")),
+            body);
+    });
+    return React.createElement("div", { className: "card" },
+        React.createElement("div", { className: "section-title" },
+            React.createElement("span", { className: "n" }, "5"), "設問別の復習ポイント"),
+        React.createElement("div", { className: "sub", style: { marginTop: -8, marginBottom: 14 } }, "自動採点されたテストについて、誤答した設問と復習用の問題を表示します。"),
+        testBlocks);
+}
+function StudentDashboard({ studentId, students, tests, scores, manuals, onLogout, onRefresh, refreshing }) {
     var _a;
     const student = students.find((s) => s.id === studentId);
     const activeIds = students.filter((s) => !s.isGraduate).map((s) => s.id);
@@ -2106,9 +2368,13 @@ function StudentDashboard({ studentId, students, tests, scores, manuals, onLogou
                     student.highSchool || "高校未登録",
                     " \uFF0F \u5FD7\u671B\u5927\u5B66\uFF1A",
                     student.targetUniv || "未登録")),
-            React.createElement("button", { className: "btn ghost", onClick: onLogout },
-                React.createElement(Icon, { name: "logout", size: 14 }),
-                "\u30ED\u30B0\u30A2\u30A6\u30C8")),
+            React.createElement("div", { style: { display: "flex", gap: 8 } },
+                onRefresh && React.createElement("button", { className: "btn ghost", disabled: !!refreshing, onClick: () => onRefresh(false) },
+                    React.createElement(Icon, { name: "refresh", size: 14 }),
+                    refreshing ? "更新中…" : "最新の順位に更新"),
+                React.createElement("button", { className: "btn ghost", onClick: onLogout },
+                    React.createElement(Icon, { name: "logout", size: 14 }),
+                    "\u30ED\u30B0\u30A2\u30A6\u30C8"))),
         availableCourses.length > 1 && (React.createElement("div", { className: "card", style: { marginBottom: 18 } },
             React.createElement("div", { className: "field", style: { maxWidth: 320, marginBottom: 0 } },
                 React.createElement("label", null, "\u8868\u793A\u3059\u308B\u30B3\u30FC\u30B9"),
@@ -2260,9 +2526,10 @@ function StudentDashboard({ studentId, students, tests, scores, manuals, onLogou
                                 m.label || `教材${i + 1}`)))))));
                     }),
                     React.createElement("div", { className: "note", style: { marginTop: 12, fontSize: 11.5, color: "var(--ink-soft)" } }, "\u6570\u5024\u306F\u30AF\u30E9\u30B9\u5E73\u5747\u5F97\u70B9\u7387\u3068\u306E\u5DEE\uFF08\u30DE\u30A4\u30CA\u30B9\u304C\u82E6\u624B\u5206\u91CE\uFF09\u3002\u4E2D\u592E\u306E\u7DDA\u304C\u30AF\u30E9\u30B9\u5E73\u5747\u3067\u3059\u3002")))),
+            React.createElement(QuestionReviewSection, { myTests: myTests, scores: scores, studentId: studentId }),
             manualTags.length > 0 && (React.createElement("div", { className: "card" },
                 React.createElement("div", { className: "section-title" },
-                    React.createElement("span", { className: "n" }, "5"),
+                    React.createElement("span", { className: "n" }, "6"),
                     "\u6559\u6750\u30EA\u30F3\u30AF\u96C6\uFF08\u5358\u5143\u5225\uFF09"),
                 React.createElement("div", { className: "sub", style: { marginTop: -8, marginBottom: 14 } }, "\u767B\u9332\u3055\u308C\u3066\u3044\u308B\u6559\u6750\u3092\u5358\u5143\u3054\u3068\u306B\u4E00\u89A7\u3067\u304D\u307E\u3059\u3002\u6210\u7E3E\u306B\u95A2\u4FC2\u306A\u304F\u3001\u3044\u3064\u3067\u3082\u898B\u8FD4\u305B\u307E\u3059\u3002"),
                 manualTags.map((tag) => {
@@ -2275,7 +2542,7 @@ function StudentDashboard({ studentId, students, tests, scores, manuals, onLogou
                 }))),
             myTests.some((t) => t.description) && (React.createElement("div", { className: "card" },
                 React.createElement("div", { className: "section-title" },
-                    React.createElement("span", { className: "n" }, "6"),
+                    React.createElement("span", { className: "n" }, "7"),
                     "\u51FA\u984C\u610F\u56F3\u30FB\u89E3\u8AAC"),
                 myTests.filter((t) => t.description).map((t) => {
                     const isOpen = !!openDesc[t.id];
@@ -2302,28 +2569,40 @@ function App() {
     const [toast, setToast] = useState("");
     const [teacherPass, setTeacherPass] = useState("");
     const [manuals, setManuals] = useState([]);
+    const [refreshing, setRefreshing] = useState(false);
+    async function loadAll() {
+        const [s, t, tp, mn] = await Promise.all([
+            safeGet(KEYS.students, []),
+            safeGet(KEYS.tests, []),
+            safeGet(KEYS.teacherPass, ""),
+            safeGet(KEYS.manuals, []),
+        ]);
+        const oldScores = await safeGet(KEYS.scores, []);
+        const perTestResults = await Promise.all(t.map((test) => safeGet(scoresKeyFor(test.id), null)));
+        const combinedScores = t.flatMap((test, i) => {
+            const perTest = perTestResults[i];
+            return perTest !== null ? perTest : oldScores.filter((sc) => sc.testId === test.id);
+        });
+        setStudents(s);
+        setTests(t);
+        setScores(combinedScores);
+        setTeacherPass(tp);
+        setManuals(mn);
+    }
     useEffect(() => {
-        (async () => {
-            const [s, t, tp, mn] = await Promise.all([
-                safeGet(KEYS.students, []),
-                safeGet(KEYS.tests, []),
-                safeGet(KEYS.teacherPass, ""),
-                safeGet(KEYS.manuals, []),
-            ]);
-            const oldScores = await safeGet(KEYS.scores, []);
-            const perTestResults = await Promise.all(t.map((test) => safeGet(scoresKeyFor(test.id), null)));
-            const combinedScores = t.flatMap((test, i) => {
-                const perTest = perTestResults[i];
-                return perTest !== null ? perTest : oldScores.filter((sc) => sc.testId === test.id);
-            });
-            setStudents(s);
-            setTests(t);
-            setScores(combinedScores);
-            setTeacherPass(tp);
-            setManuals(mn);
-            setLoading(false);
-        })();
+        (async () => { await loadAll(); setLoading(false); })();
     }, []);
+    async function refreshAll(silent) {
+        setRefreshing(true);
+        try {
+            await loadAll();
+            if (!silent)
+                notify("最新のデータに更新しました");
+        }
+        finally {
+            setRefreshing(false);
+        }
+    }
     function notify(text) {
         setToast(text);
         window.clearTimeout(window.__ssToastTimer);
@@ -2351,7 +2630,7 @@ function App() {
     }
     return (React.createElement(React.Fragment, null,
         loading ? (React.createElement("div", { className: "ss-wrap" },
-            React.createElement("div", { className: "empty" }, "\u8AAD\u307F\u8FBC\u307F\u4E2D\u2026"))) : view === "home" ? (React.createElement(Home, { onSelect: setView })) : view === "teacher-gate" ? (React.createElement(TeacherGate, { teacherPass: teacherPass, onSetPassword: async (pw) => { await saveTeacherPass(pw); setView("teacher"); }, onLogin: () => setView("teacher"), onBack: () => setView("home") })) : view === "teacher" ? (React.createElement(Teacher, { students: students, tests: tests, scores: scores, manuals: manuals, saveStudents: saveStudents, saveTests: saveTests, saveScoresForTest: saveScoresForTest, saveManuals: saveManuals, onBack: () => setView("home"), notify: notify, teacherPass: teacherPass, saveTeacherPass: saveTeacherPass })) : view === "student-login" ? (React.createElement(StudentLogin, { students: students, onBack: () => setView("home"), onLogin: (id) => { setStudentId(id); setView("student-dashboard"); } })) : view === "student-dashboard" ? (React.createElement(StudentDashboard, { studentId: studentId, students: students, tests: tests, scores: scores, manuals: manuals, onLogout: () => { setStudentId(null); setView("home"); } })) : null,
+            React.createElement("div", { className: "empty" }, "\u8AAD\u307F\u8FBC\u307F\u4E2D\u2026"))) : view === "home" ? (React.createElement(Home, { onSelect: setView })) : view === "teacher-gate" ? (React.createElement(TeacherGate, { teacherPass: teacherPass, onSetPassword: async (pw) => { await saveTeacherPass(pw); setView("teacher"); }, onLogin: () => setView("teacher"), onBack: () => setView("home") })) : view === "teacher" ? (React.createElement(Teacher, { students: students, tests: tests, scores: scores, manuals: manuals, saveStudents: saveStudents, saveTests: saveTests, saveScoresForTest: saveScoresForTest, saveManuals: saveManuals, onBack: () => setView("home"), notify: notify, teacherPass: teacherPass, saveTeacherPass: saveTeacherPass, onRefresh: refreshAll, refreshing: refreshing })) : view === "student-login" ? (React.createElement(StudentLogin, { students: students, onBack: () => setView("home"), onLogin: (id) => { setStudentId(id); setView("student-dashboard"); } })) : view === "student-dashboard" ? (React.createElement(StudentDashboard, { studentId: studentId, students: students, tests: tests, scores: scores, manuals: manuals, onLogout: () => { setStudentId(null); setView("home"); }, onRefresh: refreshAll, refreshing: refreshing })) : null,
         React.createElement(Toast, { text: toast })));
 }
 ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App, null));
