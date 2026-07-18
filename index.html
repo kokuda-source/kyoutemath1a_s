@@ -1655,6 +1655,52 @@ function StudentAccountCards({ students }) {
 }
 
 
+function handleCsvImport(e, students, saveStudents, notify) {
+    const file = e.target.files[0];
+    if (!file)
+        return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+        const text = ev.target.result;
+        const lines = text.split(/\r?\n/);
+        let newStudents = [...students];
+        let addedCount = 0;
+        let updatedCount = 0;
+        let skipped = 0;
+        lines.forEach((line, idx) => {
+            const cols = line.split(",").map((c) => c.trim().replace(/^"|"$/g, "").trim());
+            if (cols.length < 2) {
+                skipped++;
+                return;
+            }
+            const name = cols[0];
+            const pin = cols[1];
+            if (!name || !pin) {
+                skipped++;
+                return;
+            }
+            if (idx === 0 && (name === "氏名" || name.toLowerCase() === "name" || name === "名前"))
+                return;
+            const highSchool = cols[2] || "";
+            const targetUniv = cols[3] || "";
+            const gradYear = cols[4] || "";
+            const existing = newStudents.find((s) => s.name === name && s.pin === pin);
+            if (existing) {
+                newStudents = newStudents.map((s) => (s.id === existing.id ? { ...s, highSchool, targetUniv, gradYear } : s));
+                updatedCount++;
+            }
+            else {
+                newStudents.push({ id: uid(), name, pin, highSchool, targetUniv, gradYear, isGraduate: false, admittedUniv: "" });
+                addedCount++;
+            }
+        });
+        saveStudents(newStudents);
+        notify(`CSV取り込み完了：${addedCount}名追加、${updatedCount}名更新（スキップ:${skipped}行）`);
+        e.target.value = "";
+    };
+    reader.readAsText(file, "UTF-8");
+}
+
 function StudentManager({ students, saveStudents, notify }) {
     const blank = { name: "", highSchool: "", targetUniv: "", pin: "", isGraduate: false, admittedUniv: "", gradYear: "" };
     const [form, setForm] = useState(blank);
@@ -1721,6 +1767,12 @@ function StudentManager({ students, saveStudents, notify }) {
                     React.createElement(Icon, { name: editingId ? "check" : "plus", size: 14 }),
                     editingId ? "更新する" : "登録する"),
                 editingId && React.createElement("button", { className: "btn ghost", onClick: cancelEdit }, "\u30AD\u30E3\u30F3\u30BB\u30EB"))),
+        React.createElement("div", { className: "card" },
+            React.createElement("h2", null, "CSV\u4E00\u62EC\u53D6\u308A\u8FBC\u307F"),
+            React.createElement("div", { className: "sub" }, "\u5217\u9806\uFF1A\u6C0F\u540D\u3001PIN\u3001\u9AD8\u6821\u540D\u3001\u5FD7\u671B\u5927\u5B66\u3001\u5B66\u5E74\uFF08\u5148\u982D\u884C\u30D8\u30C3\u30C0\u30FC\u306F\u81EA\u52D5\u30B9\u30AD\u30C3\u30D7\uFF09"),
+            React.createElement("div", { className: "field", style: { maxWidth: 400 } },
+                React.createElement("input", { type: "file", accept: ".csv", id: "csvInput", onChange: (e) => handleCsvImport(e, students, saveStudents, notify), style: { display: "block", width: "100%", padding: "8px 0", fontSize: 13, color: "var(--ink-soft)", cursor: "pointer" } })),
+            React.createElement("div", { className: "note", style: { fontSize: 11.5, color: "var(--ink-soft)", marginTop: 6 } }, "\u30B9\u30AD\u30C3\u30D7\u3055\u308C\u305F\u884C\u3084\u7A7A\u767D\u884C\u306F\u7121\u8996\u3002\u540C\u4E00\u6C0F\u540D+PIN\u306E\u751F\u5F92\u304C\u3059\u3067\u306B\u5B58\u5728\u3059\u308B\u5834\u5408\u306F\u4E0A\u66F8\u304D\u3057\u307E\u3059\u3002")),
         React.createElement("div", { className: "card" },
             React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 } },
                 React.createElement("h2", { style: { margin: 0 } },
