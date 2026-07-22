@@ -310,6 +310,63 @@ function normalizeAnswer(s) {
         .replace(/\s+/g, "")
         .toLowerCase();
 }
+function zenkakuToHankakuDigits(s) {
+    return String(s == null ? "" : s).replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
+}
+/**
+ * 「単元名：◯◯」「第n問」「アイ：2,8」のような解答キーのテキストを、
+ * 設問行（{no, maxScore, answer, practiceUrl, practiceLabel}）の配列にパースする。
+ * no は "{単元名} 第{n}問 {文字}" の形式で生成する。この形式はGoogleフォーム側の
+ * 質問タイトルとも一致させる必要がある（generate_form_from_answer_key.gs 参照）。
+ *
+ * 空欄グループの値は次の2通りの書き方を許容する：
+ *   - カンマ区切り："エオカ：-,5,6" → エ=-, オ=5, カ=6
+ *   - 文字数一致の連結表記："アイ：-6" → ア=-, イ=6（"-6"の2文字とアイの2文字が一致するため分解）
+ * どちらとも解釈できない場合は、グループ全体を1つの設問として登録する（フォールバック）。
+ */
+function parseAnswerKeyText(text, defaultMaxScore) {
+    const lines = String(text || "").split(/\r?\n/).map((l) => l.trim()).filter((l) => l.length > 0);
+    const unitRe = /^単元名\s*[:：]\s*(.+)$/;
+    const daimonRe = /^第\s*([0-9０-９一二三四五六七八九十]+)\s*問$/;
+    const blankRe = /^([\u3041-\u3096\u30A1-\u30FC]+)\s*[:：]\s*(.+)$/;
+    let unit = "";
+    let daimon = "";
+    const questions = [];
+    lines.forEach((line) => {
+        const um = line.match(unitRe);
+        if (um) { unit = um[1].trim(); return; }
+        const dm = line.match(daimonRe);
+        if (dm) { daimon = `第${zenkakuToHankakuDigits(dm[1])}問`; return; }
+        const bm = line.match(blankRe);
+        if (!bm) return;
+        const label = bm[1];
+        const rawValue = bm[2].trim();
+        const letters = Array.from(label);
+        let values = null;
+        if (/[,、]/.test(rawValue)) {
+            values = rawValue.split(/[,、]/).map((v) => v.trim());
+        }
+        else if (Array.from(rawValue).length === letters.length) {
+            values = Array.from(rawValue);
+        }
+        const prefix = [unit, daimon].filter(Boolean).join(" ");
+        if (values && values.length === letters.length && letters.length > 1) {
+            letters.forEach((ch, i) => {
+                questions.push({
+                    id: uid(), no: `${prefix} ${ch}`.trim(), maxScore: defaultMaxScore || 5,
+                    answer: values[i], practiceUrl: "", practiceLabel: "",
+                });
+            });
+        }
+        else {
+            questions.push({
+                id: uid(), no: `${prefix} ${label}`.trim(), maxScore: defaultMaxScore || 5,
+                answer: values ? values.join("") : rawValue, practiceUrl: "", practiceLabel: "",
+            });
+        }
+    });
+    return questions;
+}
 function parseCsv(text) {
     const rows = [];
     let row = [], field = "", inQuotes = false;
@@ -1952,12 +2009,27 @@ function TestManager({ tests, saveTests, saveScoresForTest, scores, students, no
     const [qFormCsvUrl, setQFormCsvUrl] = useState("");
     const [questions, setQuestions] = useState([]);
     const [importing, setImporting] = useState(false);
+    const [answerKeyText, setAnswerKeyText] = useState("");
     function loadQuestionSetup(id) {
         setQTestId(id);
         const t = tests.find((x) => x.id === id);
         setQFormIdCol((t === null || t === void 0 ? void 0 : t.formIdCol) || "氏名");
         setQFormCsvUrl((t === null || t === void 0 ? void 0 : t.formCsvUrl) || "");
         setQuestions((t && t.questions && t.questions.length) ? t.questions.map((q) => ({ ...q })) : [blankQuestion()]);
+        setAnswerKeyText("");
+    }
+    function generateFromAnswerKey() {
+        const parsed = parseAnswerKeyText(answerKeyText, 5);
+        if (!parsed.length) {
+            notify("解答キーを読み取れませんでした（書式をご確認ください）");
+            return;
+        }
+        const hasExisting = questions.some((q) => q.no.trim() || q.answer.trim());
+        if (hasExisting && !confirm(`現在の設問一覧（${questions.length}件）を、貼り付けた解答キーから生成した${parsed.length}件の設問で置き換えます。よろしいですか？`)) {
+            return;
+        }
+        setQuestions(parsed);
+        notify(`解答キーから${parsed.length}件の設問を生成しました。内容を確認し「設定を保存」を押してください。`);
     }
     function updateQuestion(idx, field, value) {
         setQuestions((prev) => prev.map((q, i) => (i === idx ? { ...q, [field]: value } : q)));
@@ -2101,9 +2173,10 @@ function TestManager({ tests, saveTests, saveScoresForTest, scores, students, no
             qFormCsvUrl: qFormCsvUrl, setQFormCsvUrl: setQFormCsvUrl, qFormIdCol: qFormIdCol, setQFormIdCol: setQFormIdCol,
             questions: questions, updateQuestion: updateQuestion, addQuestionRow: addQuestionRow, removeQuestionRow: removeQuestionRow,
             saveQuestionSetup: saveQuestionSetup, runImport: runImport, importing: importing,
+            answerKeyText: answerKeyText, setAnswerKeyText: setAnswerKeyText, generateFromAnswerKey: generateFromAnswerKey,
         })));
 }
-function QuestionSetupCard({ qTestId, sortedForQ, loadQuestionSetup, qFormCsvUrl, setQFormCsvUrl, qFormIdCol, setQFormIdCol, questions, updateQuestion, addQuestionRow, removeQuestionRow, saveQuestionSetup, runImport, importing }) {
+function QuestionSetupCard({ qTestId, sortedForQ, loadQuestionSetup, qFormCsvUrl, setQFormCsvUrl, qFormIdCol, setQFormIdCol, questions, updateQuestion, addQuestionRow, removeQuestionRow, saveQuestionSetup, runImport, importing, answerKeyText, setAnswerKeyText, generateFromAnswerKey }) {
     const testOptions = [React.createElement("option", { key: "", value: "" }, "選択してください")].concat(sortedForQ.map((t) => React.createElement("option", { key: t.id, value: t.id }, t.name)));
     const questionRows = questions.map((q, idx) => {
         const cells = [
@@ -2131,7 +2204,18 @@ function QuestionSetupCard({ qTestId, sortedForQ, loadQuestionSetup, qFormCsvUrl
             React.createElement("div", { className: "field" },
                 React.createElement("label", null, "生徒照合用列のヘッダー名（フォームの質問文）"),
                 React.createElement("input", { value: qFormIdCol, onChange: (e) => setQFormIdCol(e.target.value), placeholder: "例）氏名" }))));
-        body.push(React.createElement("div", { key: "note", className: "note", style: { fontSize: 11.5, color: "var(--ink-soft)", marginBottom: 10 } }, "※Googleフォームに「氏名（フルネーム）」質問を必須で用意し、登録済みの生徒名と完全一致するように入力してもらってください。各設問のフォーム質問文は下の「設問名」と完全一致させてください（例：第1問(1)）。"));
+        body.push(React.createElement("div", { key: "note", className: "note", style: { fontSize: 11.5, color: "var(--ink-soft)", marginBottom: 10 } }, "※Googleフォームに「氏名（フルネーム）」質問を必須で用意し、登録済みの生徒名と完全一致するように入力してもらってください。各設問のフォーム質問文は下の「設問名」と完全一致させてください（例：数と式 第1問 ア）。"));
+        body.push(React.createElement("div", { key: "akbox", className: "field", style: { marginBottom: 14 } },
+            React.createElement("label", null, "解答キーから設問を一括生成（貼り付け）"),
+            React.createElement("div", { className: "sub", style: { marginTop: -2, marginBottom: 6 } }, "「単元名：◯◯」「第n問」「アイ：2,8」のような形式のテキストを貼り付けると、設問名・正解を自動生成します（配点は一律5点で登録されるので、必要に応じて後から調整してください）。生成後は必ず内容を確認してから「設定を保存」を押してください。"),
+            React.createElement("textarea", {
+                value: answerKeyText, onChange: (e) => setAnswerKeyText(e.target.value), rows: 8,
+                placeholder: "単元名：数と式\n第１問\nアイ：2,8\nウエオカ：2,5,3,2\nキク：6,4\nケ：1\n第２問\n…",
+                style: { width: "100%", fontFamily: "ui-monospace, monospace", fontSize: 12.5, resize: "vertical" },
+            }),
+            React.createElement("div", { style: { marginTop: 8 } },
+                React.createElement("button", { className: "btn ghost", onClick: generateFromAnswerKey },
+                    React.createElement(Icon, { name: "upload", size: 13 }), "解答キーから設問を生成"))));
         body.push(React.createElement("div", { key: "tbl", className: "tbl-wrap" },
             React.createElement("table", null,
                 React.createElement("thead", null,
