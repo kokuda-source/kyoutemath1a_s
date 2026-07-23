@@ -248,6 +248,9 @@ const KEYS = {
 function scoresKeyFor(testId) {
     return "sougaku-seiseki:scores:" + testId;
 }
+function questionsKeyFor(testId) {
+    return "sougaku-seiseki:test-questions:" + testId;
+}
 async function safeGet(key, fallback) {
     if (!APPS_SCRIPT_URL || APPS_SCRIPT_URL.indexOf("PASTE_YOUR") === 0)
         return fallback;
@@ -1402,7 +1405,7 @@ function StudentReportExport({ students, tests, scores, manuals }) {
         React.createElement("div", { className: "note", style: { marginTop: 10, fontSize: 11.5, color: "var(--ink-soft)" } }, "\u65B0\u3057\u3044\u30BF\u30D6\u3067\u30D7\u30EC\u30D3\u30E5\u30FC\u304C\u958B\u304D\u307E\u3059\u3002\u300C\u5370\u5237 / PDF\u3068\u3057\u3066\u4FDD\u5B58\u300D\u304B\u3089\u7D19\u3078\u306E\u5370\u5237\u3001\u307E\u305F\u306FPDF\u4FDD\u5B58\u304C\u3067\u304D\u307E\u3059\u3002\u5168\u54E1\u5206\u3092\u307E\u3068\u3081\u3066\u51FA\u529B\u3059\u308B\u3068\u3001\u751F\u5F92\u3054\u3068\u306B\u81EA\u52D5\u3067\u6539\u30DA\u30FC\u30B8\u3055\u308C\u307E\u3059\u3002")));
 }
 
-function Teacher({ students, tests, scores, manuals, saveStudents, saveTests, saveScoresForTest, saveManuals, onBack, notify, teacherPass, saveTeacherPass, onRefresh, refreshing, saveError }) {
+function Teacher({ students, tests, scores, manuals, saveStudents, saveTests, saveTestQuestions, saveScoresForTest, saveManuals, onBack, notify, teacherPass, saveTeacherPass, onRefresh, refreshing, saveError }) {
     const [tab, setTab] = useState("students");
     return (React.createElement("div", { className: "ss-wrap" },
         React.createElement(TopBar, { title: "\u5148\u751F\u7528\u7BA1\u7406\u753B\u9762", onBack: onBack }),
@@ -1432,7 +1435,7 @@ function Teacher({ students, tests, scores, manuals, saveStudents, saveTests, sa
                 React.createElement(Icon, { name: "lock", size: 14 }),
                 "\u8A2D\u5B9A")),
         tab === "students" && React.createElement(StudentManager, { students: students, saveStudents: saveStudents, notify: notify }),
-        tab === "tests" && React.createElement(TestManager, { tests: tests, saveTests: saveTests, saveScoresForTest: saveScoresForTest, scores: scores, students: students, notify: notify }),
+        tab === "tests" && React.createElement(TestManager, { tests: tests, saveTests: saveTests, saveTestQuestions: saveTestQuestions, saveScoresForTest: saveScoresForTest, scores: scores, students: students, notify: notify }),
         tab === "scoring" && React.createElement(ScoreEntry, { students: students, tests: tests, scores: scores, saveScoresForTest: saveScoresForTest, notify: notify }),
         tab === "analytics" && React.createElement(TestAnalytics, { students: students, tests: tests, scores: scores, onRefresh: onRefresh, refreshing: refreshing }),
         tab === "reports" && React.createElement(StudentReportExport, { students: students, tests: tests, scores: scores, manuals: manuals }),
@@ -2081,7 +2084,7 @@ function StudentManager({ students, saveStudents, notify }) {
         React.createElement(StudentAccountCards, { students: students })));
 }
 const blankQuestion = () => ({ id: uid(), no: "", maxScore: 5, answer: "", practiceUrl: "", practiceLabel: "" });
-function TestManager({ tests, saveTests, saveScoresForTest, scores, students, notify }) {
+function TestManager({ tests, saveTests, saveTestQuestions, saveScoresForTest, scores, students, notify }) {
     const blank = { name: "", date: "", maxScore: 100, tagsInput: "", pdfUrl: "", videoUrl: "", description: "", course: "" };
     const [form, setForm] = useState(blank);
     const [editingId, setEditingId] = useState(null);
@@ -2132,7 +2135,7 @@ function TestManager({ tests, saveTests, saveScoresForTest, scores, students, no
         if (!qTestId)
             return;
         const cleaned = questions.filter((q) => q.no.trim());
-        saveTests(tests.map((t) => (t.id === qTestId ? { ...t, questions: cleaned, formCsvUrl: qFormCsvUrl.trim(), formIdCol: qFormIdCol.trim() || "氏名" } : t)));
+        saveTestQuestions(qTestId, cleaned, { formCsvUrl: qFormCsvUrl.trim(), formIdCol: qFormIdCol.trim() || "氏名" });
         notify("設問・採点設定を保存しました");
     }
     async function runImport() {
@@ -2181,6 +2184,7 @@ function TestManager({ tests, saveTests, saveScoresForTest, scores, students, no
             return;
         saveTests(tests.filter((t) => t.id !== id));
         saveScoresForTest(id, []);
+        saveTestQuestions(id, []);
         if (editingId === id)
             cancelEdit();
         notify("テストを削除しました");
@@ -2771,8 +2775,15 @@ function App() {
             const perTest = perTestResults[i];
             return perTest !== null ? perTest : oldScores.filter((sc) => sc.testId === test.id);
         });
+        // 設問（questions）はテストごとに別キーで保存している（1セルの文字数上限を避けるため）。
+        // 別キーが見つからない場合は、テスト本体に古い形式で埋め込まれたquestionsがあればそれを使う（後方互換）。
+        const perTestQuestions = await Promise.all(t.map((test) => safeGet(questionsKeyFor(test.id), null)));
+        const testsWithQuestions = t.map((test, i) => ({
+            ...test,
+            questions: perTestQuestions[i] !== null ? perTestQuestions[i] : (test.questions || []),
+        }));
         setStudents(s);
-        setTests(t);
+        setTests(testsWithQuestions);
         setScores(combinedScores);
         setTeacherPass(tp);
         setManuals(mn);
@@ -2805,8 +2816,33 @@ function App() {
     async function saveTests(listOrUpdater) {
         let resolved;
         setTests((prev) => { resolved = typeof listOrUpdater === "function" ? listOrUpdater(prev) : listOrUpdater; return resolved; });
-        const ok = await safeSet(KEYS.tests, resolved);
+        // questions は容量が大きくなりがちなので、テスト本体（一覧用の軽い情報）には含めずテストごとに別キーで保存する。
+        // ここで questions を持っているテストがあれば、テスト名の編集など questions と無関係な保存であっても、
+        // 念のため毎回テスト別キーにも書き戻しておく（既存データを誤って消さないための安全策）。
+        const slim = resolved.map((t) => { const { questions, ...rest } = t; return rest; });
+        const writes = [safeSet(KEYS.tests, slim)];
+        resolved.forEach((t) => {
+            if (t.questions && t.questions.length) {
+                writes.push(safeSet(questionsKeyFor(t.id), t.questions));
+            }
+        });
+        const results = await Promise.all(writes);
+        const ok = results.every(Boolean);
         setSaveError(ok ? "" : "テスト情報の保存に失敗しました。通信環境をご確認のうえ、もう一度お試しください（この画面を閉じたり更新したりすると、直前の変更が失われる可能性があります）。");
+    }
+    async function saveTestQuestions(testId, questions, extraFields) {
+        let resolved;
+        setTests((prev) => {
+            resolved = prev.map((t) => (t.id === testId ? { ...t, ...(extraFields || {}), questions } : t));
+            return resolved;
+        });
+        const slim = resolved.map((t) => { const { questions: _q, ...rest } = t; return rest; });
+        const [okMeta, okQuestions] = await Promise.all([
+            safeSet(KEYS.tests, slim),
+            safeSet(questionsKeyFor(testId), questions),
+        ]);
+        const ok = okMeta && okQuestions;
+        setSaveError(ok ? "" : "設問・採点設定の保存に失敗しました。通信環境をご確認のうえ、もう一度お試しください（この画面を閉じたり更新したりすると、直前の変更が失われる可能性があります）。");
     }
     async function saveScoresForTest(testId, list) {
         setScores((prev) => [...prev.filter((sc) => sc.testId !== testId), ...list]);
@@ -2826,7 +2862,7 @@ function App() {
     }
     return (React.createElement(React.Fragment, null,
         loading ? (React.createElement("div", { className: "ss-wrap" },
-            React.createElement("div", { className: "empty" }, "\u8AAD\u307F\u8FBC\u307F\u4E2D\u2026"))) : view === "home" ? (React.createElement(Home, { onSelect: setView })) : view === "teacher-gate" ? (React.createElement(TeacherGate, { teacherPass: teacherPass, onSetPassword: async (pw) => { await saveTeacherPass(pw); setView("teacher"); }, onLogin: () => setView("teacher"), onBack: () => setView("home") })) : view === "teacher" ? (React.createElement(Teacher, { students: students, tests: tests, scores: scores, manuals: manuals, saveStudents: saveStudents, saveTests: saveTests, saveScoresForTest: saveScoresForTest, saveManuals: saveManuals, onBack: () => setView("home"), notify: notify, teacherPass: teacherPass, saveTeacherPass: saveTeacherPass, onRefresh: refreshAll, refreshing: refreshing, saveError: saveError })) : view === "student-login" ? (React.createElement(StudentLogin, { students: students, onBack: () => setView("home"), onLogin: (id) => { setStudentId(id); setView("student-dashboard"); } })) : view === "student-dashboard" ? (React.createElement(StudentDashboard, { studentId: studentId, students: students, tests: tests, scores: scores, manuals: manuals, onLogout: () => { setStudentId(null); setView("home"); }, onRefresh: refreshAll, refreshing: refreshing })) : null,
+            React.createElement("div", { className: "empty" }, "\u8AAD\u307F\u8FBC\u307F\u4E2D\u2026"))) : view === "home" ? (React.createElement(Home, { onSelect: setView })) : view === "teacher-gate" ? (React.createElement(TeacherGate, { teacherPass: teacherPass, onSetPassword: async (pw) => { await saveTeacherPass(pw); setView("teacher"); }, onLogin: () => setView("teacher"), onBack: () => setView("home") })) : view === "teacher" ? (React.createElement(Teacher, { students: students, tests: tests, scores: scores, manuals: manuals, saveStudents: saveStudents, saveTests: saveTests, saveTestQuestions: saveTestQuestions, saveScoresForTest: saveScoresForTest, saveManuals: saveManuals, onBack: () => setView("home"), notify: notify, teacherPass: teacherPass, saveTeacherPass: saveTeacherPass, onRefresh: refreshAll, refreshing: refreshing, saveError: saveError })) : view === "student-login" ? (React.createElement(StudentLogin, { students: students, onBack: () => setView("home"), onLogin: (id) => { setStudentId(id); setView("student-dashboard"); } })) : view === "student-dashboard" ? (React.createElement(StudentDashboard, { studentId: studentId, students: students, tests: tests, scores: scores, manuals: manuals, onLogout: () => { setStudentId(null); setView("home"); }, onRefresh: refreshAll, refreshing: refreshing })) : null,
         React.createElement(Toast, { text: toast })));
 }
 ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App, null));
