@@ -2808,14 +2808,14 @@ function App() {
         window.__ssToastTimer = window.setTimeout(() => setToast(""), 2200);
     }
     async function saveStudents(listOrUpdater) {
-        let resolved;
-        setStudents((prev) => { resolved = typeof listOrUpdater === "function" ? listOrUpdater(prev) : listOrUpdater; return resolved; });
+        const resolved = typeof listOrUpdater === "function" ? listOrUpdater(students) : listOrUpdater;
+        setStudents(resolved);
         const ok = await safeSet(KEYS.students, resolved);
         setSaveError(ok ? "" : "生徒情報の保存に失敗しました。通信環境をご確認のうえ、もう一度お試しください（この画面を閉じたり更新したりすると、直前の変更が失われる可能性があります）。");
     }
     async function saveTests(listOrUpdater) {
-        let resolved;
-        setTests((prev) => { resolved = typeof listOrUpdater === "function" ? listOrUpdater(prev) : listOrUpdater; return resolved; });
+        const resolved = typeof listOrUpdater === "function" ? listOrUpdater(tests) : listOrUpdater;
+        setTests(resolved);
         // questions は容量が大きくなりがちなので、テスト本体（一覧用の軽い情報）には含めずテストごとに別キーで保存する。
         // ここで questions を持っているテストがあれば、テスト名の編集など questions と無関係な保存であっても、
         // 念のため毎回テスト別キーにも書き戻しておく（既存データを誤って消さないための安全策）。
@@ -2831,11 +2831,8 @@ function App() {
         setSaveError(ok ? "" : "テスト情報の保存に失敗しました。通信環境をご確認のうえ、もう一度お試しください（この画面を閉じたり更新したりすると、直前の変更が失われる可能性があります）。");
     }
     async function saveTestQuestions(testId, questions, extraFields) {
-        let resolved;
-        setTests((prev) => {
-            resolved = prev.map((t) => (t.id === testId ? { ...t, ...(extraFields || {}), questions } : t));
-            return resolved;
-        });
+        const resolved = tests.map((t) => (t.id === testId ? { ...t, ...(extraFields || {}), questions } : t));
+        setTests(resolved);
         const slim = resolved.map((t) => { const { questions: _q, ...rest } = t; return rest; });
         const [okMeta, okQuestions] = await Promise.all([
             safeSet(KEYS.tests, slim),
@@ -2855,8 +2852,8 @@ function App() {
         setSaveError(ok ? "" : "パスワードの保存に失敗しました。通信環境をご確認のうえ、もう一度お試しください。");
     }
     async function saveManuals(listOrUpdater) {
-        let resolved;
-        setManuals((prev) => { resolved = typeof listOrUpdater === "function" ? listOrUpdater(prev) : listOrUpdater; return resolved; });
+        const resolved = typeof listOrUpdater === "function" ? listOrUpdater(manuals) : listOrUpdater;
+        setManuals(resolved);
         const ok = await safeSet(KEYS.manuals, resolved);
         setSaveError(ok ? "" : "攻略マニュアルの保存に失敗しました。通信環境をご確認のうえ、もう一度お試しください（この画面を閉じたり更新したりすると、直前の変更が失われる可能性があります）。");
     }
