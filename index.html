@@ -504,9 +504,30 @@ async function importFormResponses(test, students, scores, saveScoresForTest, no
     }
     try {
         const res = await fetch(test.formCsvUrl);
+        if (!res.ok) {
+            console.error("CSV取得失敗: HTTPステータス", res.status, test.formCsvUrl);
+            notify(`CSVの取得に失敗しました（HTTPステータス${res.status}）。「ウェブに公開」の設定と、公開されているシートがフォームの回答であることをご確認ください。`);
+            return;
+        }
         const text = await res.text();
+        // Googleが「ウェブに公開」未設定・非公開のシートに対して200番台でHTMLのログイン/エラーページを
+        // 返してくることがあるため、CSVらしい内容かどうかも簡易チェックする。
+        if (/<html[\s>]/i.test(text.slice(0, 200))) {
+            console.error("CSV取得失敗: HTMLが返ってきた（非公開の可能性）", test.formCsvUrl);
+            notify("CSVの代わりにHTMLページが返ってきました。スプレッドシートが「ウェブに公開」されていない可能性があります。公開設定をご確認のうえ、発行し直したURLを設定してください。");
+            return;
+        }
         const rows = parseCsv(text);
+        if (!rows.length) {
+            notify("CSVは取得できましたが、回答データが0件でした（生徒がまだフォームに回答していないか、公開されているシートが空の可能性があります）。");
+            return;
+        }
         const idCol = test.formIdCol || "氏名";
+        if (!(idCol in rows[0])) {
+            console.error("CSVヘッダーに一致する列が見つかりません", idCol, "実際の列名:", Object.keys(rows[0]));
+            notify(`「生徒照合用列のヘッダー名」に設定した「${idCol}」という列がCSVに見つかりませんでした。実際の列名: ${Object.keys(rows[0]).join(" / ")}`);
+            return;
+        }
         let matched = 0, unmatched = [];
         const existing = scores.filter((sc) => sc.testId === test.id);
         const byStudent = {};
