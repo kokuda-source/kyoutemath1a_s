@@ -1520,7 +1520,7 @@ function Teacher({ students, tests, scores, manuals, saveStudents, saveTests, sa
             React.createElement("button", { className: "tab " + (tab === "settings" ? "active" : ""), onClick: () => setTab("settings") },
                 React.createElement(Icon, { name: "lock", size: 14 }),
                 "\u8A2D\u5B9A")),
-        tab === "students" && React.createElement(StudentManager, { students: students, saveStudents: saveStudents, notify: notify }),
+        tab === "students" && React.createElement(StudentManager, { students: students, tests: tests, saveStudents: saveStudents, notify: notify }),
         tab === "tests" && React.createElement(TestManager, { tests: tests, saveTests: saveTests, saveTestQuestions: saveTestQuestions, saveScoresForTest: saveScoresForTest, scores: scores, students: students, notify: notify }),
         tab === "scoring" && React.createElement(ScoreEntry, { students: students, tests: tests, scores: scores, saveScoresForTest: saveScoresForTest, notify: notify }),
         tab === "analytics" && React.createElement(TestAnalytics, { students: students, tests: tests, scores: scores, onRefresh: onRefresh, refreshing: refreshing }),
@@ -1806,9 +1806,10 @@ function exportStudentsToExcel(students) {
     const today = new Date().toISOString().slice(0, 10);
     XLSX.writeFile(wb, `生徒一覧_${today}.xlsx`);
 }
-function buildStudentAccountCardsHtml(students, siteUrl, className) {
+function buildStudentAccountCardsHtml(students, siteUrl, className, selectedTests) {
     const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     const PORTAL_URL = "https://kokuda-source.github.io/OKD_math_infomatics_main/";
+    const tests = Array.isArray(selectedTests) ? selectedTests.filter((t) => t && t.url) : [];
     const pagesHtml = students.map((s, i) => `
     <div class="onb-page">
       <div class="onb-band"></div>
@@ -1859,6 +1860,17 @@ function buildStudentAccountCardsHtml(students, siteUrl, className) {
             <div class="onb-qr-caption">ポータルサイトへ<br/>アクセス</div>
           </div>
         </div>
+        ${tests.length === 0 ? "" : `
+        <div class="onb-testforms">
+          <div class="onb-sec-title">③ テスト解答フォーム</div>
+          <div class="onb-testform-grid">
+            ${tests.map((t, j) => `
+            <div class="onb-testform-item">
+              <div class="onb-qr xsmall" id="qrt_${i}_${j}"></div>
+              <div class="onb-testform-name">${esc(t.name)}</div>
+            </div>`).join("")}
+          </div>
+        </div>`}
 
         <div class="onb-sec-title" style="margin-top:9mm;">このクラスのページでできること</div>
         <div class="onb-features">
@@ -1890,8 +1902,16 @@ function buildStudentAccountCardsHtml(students, siteUrl, className) {
       </div>
     </div>
   `).join("");
-    const qrInitHtml = students.map((s, i) => `try { new QRCode(document.getElementById("qr_${i}"), { text: ${JSON.stringify(siteUrl)}, width: 80, height: 80, colorDark: "#1C2541", colorLight: "#F6F4EE" }); } catch(e){}
-     try { new QRCode(document.getElementById("qrp_${i}"), { text: ${JSON.stringify(PORTAL_URL)}, width: 62, height: 62, colorDark: "#1C2541", colorLight: "#FCFBF8" }); } catch(e){}`).join("\n");
+    const qrInitHtml = students.map((s, i) => {
+        const lines = [
+            `try { new QRCode(document.getElementById("qr_${i}"), { text: ${JSON.stringify(siteUrl)}, width: 80, height: 80, colorDark: "#1C2541", colorLight: "#F6F4EE" }); } catch(e){}`,
+            `try { new QRCode(document.getElementById("qrp_${i}"), { text: ${JSON.stringify(PORTAL_URL)}, width: 62, height: 62, colorDark: "#1C2541", colorLight: "#FCFBF8" }); } catch(e){}`,
+        ];
+        tests.forEach((t, j) => {
+            lines.push(`try { new QRCode(document.getElementById("qrt_${i}_${j}"), { text: ${JSON.stringify(t.url)}, width: 46, height: 46, colorDark: "#1C2541", colorLight: "#fff" }); } catch(e){}`);
+        });
+        return lines.join("\n");
+    }).join("\n");
     const html = `<!DOCTYPE html>
 <html lang="ja"><head><meta charset="UTF-8">
 <title>${esc(className)} 利用開始のご案内</title>
@@ -1941,12 +1961,18 @@ function buildStudentAccountCardsHtml(students, siteUrl, className) {
   .onb-login-right{ flex-shrink:0; text-align:center; }
   .onb-qr{ width:80px; height:80px; border:1px solid #DCD8CC; margin:0 auto; }
   .onb-qr.small{ width:62px; height:62px; }
+  .onb-qr.xsmall{ width:46px; height:46px; }
   .onb-qr-caption{ font-size:9px; color:#5B6685; margin-top:2mm; line-height:1.5; }
 
-  .onb-portal{ display:flex; gap:10mm; background:#FCFBF8; border:1px solid #DCD8CC; padding:5mm 8mm; margin-bottom:7mm; align-items:center; }
+  .onb-portal{ display:flex; gap:10mm; background:#FCFBF8; border:1px solid #DCD8CC; padding:5mm 8mm; margin-bottom:4mm; align-items:center; }
   .onb-portal-left{ flex:1; }
   .onb-portal-right{ flex-shrink:0; text-align:center; }
   .onb-portal-desc{ font-size:10px; color:#5B6685; line-height:1.7; }
+
+  .onb-testforms{ background:#fff; border:1px solid #DCD8CC; padding:5mm 8mm; margin-bottom:7mm; }
+  .onb-testform-grid{ display:flex; flex-wrap:wrap; gap:5mm 6mm; margin-top:2mm; }
+  .onb-testform-item{ text-align:center; width:24mm; }
+  .onb-testform-name{ font-size:9px; color:#3A4258; margin-top:1.5mm; line-height:1.4; word-break:break-word; }
 
   .onb-features{ display:grid; grid-template-columns:1fr 1fr; gap:3mm 8mm; margin-bottom:7mm; }
   .onb-feat{ display:flex; gap:3.5mm; align-items:flex-start; }
@@ -1987,27 +2013,62 @@ function buildStudentAccountCardsHtml(students, siteUrl, className) {
     win.document.write(html);
     win.document.close();
 }
-function StudentAccountCards({ students }) {
+function StudentAccountCards({ students, tests }) {
     var _a;
     const active = students.filter((s) => !s.isGraduate);
     const [studentId, setStudentId] = useState(((_a = active[0]) === null || _a === void 0 ? void 0 : _a.id) || "");
+    const testsWithForm = (tests || []).filter((t) => t.formPublicUrl && t.formPublicUrl.trim());
+    const sortedTestsWithForm = [...testsWithForm].sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+    const [selectedTestIds, setSelectedTestIds] = useState([]);
+    const MAX_TESTS = 4;
+    function toggleTest(id) {
+        setSelectedTestIds((prev) => {
+            if (prev.includes(id))
+                return prev.filter((x) => x !== id);
+            if (prev.length >= MAX_TESTS) {
+                alert(`QRコードに載せられるテストは最大${MAX_TESTS}件までです。`);
+                return prev;
+            }
+            return [...prev, id];
+        });
+    }
     if (!active.length)
         return null;
+    const selectedTests = sortedTestsWithForm
+        .filter((t) => selectedTestIds.includes(t.id))
+        .map((t) => ({ name: t.name, url: t.formPublicUrl.trim() }));
     return (React.createElement("div", { className: "card" },
         React.createElement("h2", null, "\u751F\u5F92\u30A2\u30AB\u30A6\u30F3\u30C8\u30AB\u30FC\u30C9\uFF08PDF\u51FA\u529B\uFF09"),
         React.createElement("div", { className: "sub" }, "\u30B5\u30A4\u30C8\u30C7\u30B6\u30A4\u30F3\u306B\u5408\u308F\u305B\u305F\u30AB\u30FC\u30C9\u5F62\u5F0F\u3067\u3001\u6C0F\u540D\u30FBPIN\u30FBQR\u30B3\u30FC\u30C9\u3092\u51FA\u529B\u3057\u307E\u3059\u3002\u5207\u308A\u53D6\u3063\u3066\u914D\u5E03\u3067\u304D\u307E\u3059\u3002"),
         React.createElement("div", { className: "field", style: { maxWidth: 360 } },
             React.createElement("label", null, "\u5BFE\u8C61\u306E\u751F\u5F92"),
             React.createElement("select", { value: studentId, onChange: (e) => setStudentId(e.target.value) }, active.map((s) => React.createElement("option", { key: s.id, value: s.id }, s.name)))),
+        React.createElement("div", { className: "field" },
+            React.createElement("label", null, `\u30C6\u30B9\u30C8\u89E3\u7B54\u30D5\u30A9\u30FC\u30E0\u306EQR\u30B3\u30FC\u30C9\uFF08\u4EFB\u610F\u30FB\u6700\u5927${MAX_TESTS}\u4EF6\u3001${selectedTestIds.length}/${MAX_TESTS}\u9078\u629E\u4E2D\uFF09`),
+            testsWithForm.length === 0
+                ? React.createElement("div", { className: "sub", style: { marginTop: -2 } }, "\u300C\u8A2D\u554F\u5225\u81EA\u52D5\u63A1\u70B9\u300D\u753B\u9762\u3067\u300CGoogle\u30D5\u30A9\u30FC\u30E0\u306E\u56DE\u7B54\u7528URL\u300D\u3092\u767B\u9332\u3059\u308B\u3068\u3001\u3053\u3053\u3067\u9078\u629E\u3067\u304D\u308B\u3088\u3046\u306B\u306A\u308A\u307E\u3059\u3002")
+                : React.createElement("div", { className: "sub", style: { marginTop: -2, marginBottom: 6 } }, "\u30AB\u30FC\u30C9\u306B\u8A2D\u554F\u3059\u308B\u30C6\u30B9\u30C8\u3092\u9078\u3093\u3067\u304F\u3060\u3055\u3044\u3002\u53D7\u8B1B\u30AF\u30E9\u30B9\u3054\u3068\u306B\u8A72\u5F53\u3059\u308B\u30C6\u30B9\u30C8\u304C\u7570\u306A\u308B\u5834\u5408\u306F\u3001\u5FC5\u8981\u306A\u3082\u306E\u3060\u3051\u9078\u3093\u3067\u304F\u3060\u3055\u3044\u3002"),
+            React.createElement("div", { style: { display: "flex", flexWrap: "wrap", gap: 8 } }, sortedTestsWithForm.map((t) => {
+                const checked = selectedTestIds.includes(t.id);
+                return React.createElement("label", {
+                    key: t.id,
+                    style: {
+                        display: "flex", alignItems: "center", gap: 6, fontSize: 12.5,
+                        border: "1px solid " + (checked ? "var(--ink)" : "#DCD8CC"),
+                        background: checked ? "#EEF0F5" : "#fff",
+                        borderRadius: 6, padding: "5px 10px", cursor: "pointer",
+                    },
+                }, React.createElement("input", { type: "checkbox", checked: checked, onChange: () => toggleTest(t.id) }), t.name);
+            }))),
         React.createElement("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" } },
             React.createElement("button", { className: "btn", onClick: () => {
                     const s = active.find((x) => x.id === studentId);
                     if (s)
-                        buildStudentAccountCardsHtml([s], window.location.href, document.title);
+                        buildStudentAccountCardsHtml([s], window.location.href, document.title, selectedTests);
                 } },
                 React.createElement(Icon, { name: "clipboard", size: 14 }),
                 "\u3053\u306E\u751F\u5F92\u306E\u30AB\u30FC\u30C9\u3092\u51FA\u529B"),
-            React.createElement("button", { className: "btn ghost", onClick: () => buildStudentAccountCardsHtml(active, window.location.href, document.title) },
+            React.createElement("button", { className: "btn ghost", onClick: () => buildStudentAccountCardsHtml(active, window.location.href, document.title, selectedTests) },
                 React.createElement(Icon, { name: "users", size: 14 }),
                 "\u5728\u7C4D\u751F \u5168\u54E1\u3092\u307E\u3068\u3081\u3066\u51FA\u529B\uFF08",
                 active.length,
@@ -2062,7 +2123,7 @@ function handleCsvImport(e, students, saveStudents, notify) {
     reader.readAsText(file, "UTF-8");
 }
 
-function StudentManager({ students, saveStudents, notify }) {
+function StudentManager({ students, tests, saveStudents, notify }) {
     const blank = { name: "", highSchool: "", targetUniv: "", pin: "", isGraduate: false, admittedUniv: "", gradYear: "" };
     const [form, setForm] = useState(blank);
     const [editingId, setEditingId] = useState(null);
@@ -2167,7 +2228,7 @@ function StudentManager({ students, saveStudents, notify }) {
                                 React.createElement(Icon, { name: "pen", size: 13 })),
                             React.createElement("button", { className: "btn danger", onClick: () => removeStudent(s.id) },
                                 React.createElement(Icon, { name: "trash", size: 14 }))))))))))),
-        React.createElement(StudentAccountCards, { students: students })));
+        React.createElement(StudentAccountCards, { students: students, tests: tests })));
 }
 const blankQuestion = () => ({ id: uid(), no: "", maxScore: 5, answer: "", practiceUrl: "", practiceLabel: "" });
 function TestManager({ tests, saveTests, saveTestQuestions, saveScoresForTest, scores, students, notify }) {
@@ -2180,6 +2241,7 @@ function TestManager({ tests, saveTests, saveTestQuestions, saveScoresForTest, s
     const [qFormIdCol, setQFormIdCol] = useState("氏名");
     const [qFormCsvUrl, setQFormCsvUrl] = useState("");
     const [qFormSheetUrl, setQFormSheetUrl] = useState("");
+    const [qFormPublicUrl, setQFormPublicUrl] = useState("");
     const [questions, setQuestions] = useState([]);
     const [importing, setImporting] = useState(false);
     const [answerKeyText, setAnswerKeyText] = useState("");
@@ -2189,6 +2251,7 @@ function TestManager({ tests, saveTests, saveTestQuestions, saveScoresForTest, s
         setQFormIdCol((t === null || t === void 0 ? void 0 : t.formIdCol) || "氏名");
         setQFormCsvUrl((t === null || t === void 0 ? void 0 : t.formCsvUrl) || "");
         setQFormSheetUrl((t === null || t === void 0 ? void 0 : t.formSheetUrl) || "");
+        setQFormPublicUrl((t === null || t === void 0 ? void 0 : t.formPublicUrl) || "");
         setQuestions((t && t.questions && t.questions.length) ? t.questions.map((q) => ({ ...q })) : [blankQuestion()]);
         setAnswerKeyText("");
     }
@@ -2223,7 +2286,7 @@ function TestManager({ tests, saveTests, saveTestQuestions, saveScoresForTest, s
         if (!qTestId)
             return;
         const cleaned = questions.filter((q) => q.no.trim());
-        saveTestQuestions(qTestId, cleaned, { formCsvUrl: qFormCsvUrl.trim(), formSheetUrl: qFormSheetUrl.trim(), formIdCol: qFormIdCol.trim() || "氏名" });
+        saveTestQuestions(qTestId, cleaned, { formCsvUrl: qFormCsvUrl.trim(), formSheetUrl: qFormSheetUrl.trim(), formPublicUrl: qFormPublicUrl.trim(), formIdCol: qFormIdCol.trim() || "氏名" });
         notify("設問・採点設定を保存しました");
     }
     async function runImport() {
@@ -2355,13 +2418,14 @@ function TestManager({ tests, saveTests, saveTestQuestions, saveScoresForTest, s
         React.createElement(QuestionSetupCard, {
             tests: tests, sortedForQ: sortedForQ, qTestId: qTestId, loadQuestionSetup: loadQuestionSetup,
             qFormCsvUrl: qFormCsvUrl, setQFormCsvUrl: setQFormCsvUrl, qFormSheetUrl: qFormSheetUrl, setQFormSheetUrl: setQFormSheetUrl,
+            qFormPublicUrl: qFormPublicUrl, setQFormPublicUrl: setQFormPublicUrl,
             qFormIdCol: qFormIdCol, setQFormIdCol: setQFormIdCol,
             questions: questions, updateQuestion: updateQuestion, addQuestionRow: addQuestionRow, removeQuestionRow: removeQuestionRow,
             saveQuestionSetup: saveQuestionSetup, runImport: runImport, importing: importing,
             answerKeyText: answerKeyText, setAnswerKeyText: setAnswerKeyText, generateFromAnswerKey: generateFromAnswerKey,
         })));
 }
-function QuestionSetupCard({ qTestId, sortedForQ, loadQuestionSetup, qFormCsvUrl, setQFormCsvUrl, qFormSheetUrl, setQFormSheetUrl, qFormIdCol, setQFormIdCol, questions, updateQuestion, addQuestionRow, removeQuestionRow, saveQuestionSetup, runImport, importing, answerKeyText, setAnswerKeyText, generateFromAnswerKey }) {
+function QuestionSetupCard({ qTestId, sortedForQ, loadQuestionSetup, qFormCsvUrl, setQFormCsvUrl, qFormSheetUrl, setQFormSheetUrl, qFormPublicUrl, setQFormPublicUrl, qFormIdCol, setQFormIdCol, questions, updateQuestion, addQuestionRow, removeQuestionRow, saveQuestionSetup, runImport, importing, answerKeyText, setAnswerKeyText, generateFromAnswerKey }) {
     const testOptions = [React.createElement("option", { key: "", value: "" }, "選択してください")].concat(sortedForQ.map((t) => React.createElement("option", { key: t.id, value: t.id }, t.name)));
     const questionRows = questions.map((q, idx) => {
         const cells = [
@@ -2382,6 +2446,10 @@ function QuestionSetupCard({ qTestId, sortedForQ, loadQuestionSetup, qFormCsvUrl
             React.createElement("select", { value: qTestId, onChange: (e) => loadQuestionSetup(e.target.value) }, testOptions)),
     ];
     if (qTestId) {
+        body.push(React.createElement("div", { key: "row1a", className: "field", style: { marginBottom: 10 } },
+            React.createElement("label", null, "Googleフォームの回答用URL（生徒に配布するURL・アカウントカードのQRコードに使用）"),
+            React.createElement("div", { className: "sub", style: { marginTop: -2, marginBottom: 4 } }, "Googleフォーム自動生成スクリプトの実行ログに表示される「回答用URL」を貼り付けてください。ここで設定すると、「生徒アカウントカード」画面でこのテストを選んでQRコードを出力できるようになります。"),
+            React.createElement("input", { value: qFormPublicUrl, onChange: (e) => setQFormPublicUrl(e.target.value), placeholder: "https://docs.google.com/forms/d/e/xxxxxxxx/viewform" })));
         body.push(React.createElement("div", { key: "row1b", className: "field", style: { marginBottom: 10 } },
             React.createElement("label", null, "回答スプレッドシートのURL（推奨・「ウェブに公開」不要）"),
             React.createElement("div", { className: "sub", style: { marginTop: -2, marginBottom: 4 } }, "フォームの回答が入っているスプレッドシートを開いて、アドレスバーのURLをそのまま貼り付けてください（例：https://docs.google.com/spreadsheets/d/1AbCdE.../edit）。「ウェブに公開」の設定は不要です。学校のGoogleアカウントで「ウェブに公開」が管理者に禁止されている場合でも使えます。この欄を設定すると、下のCSV公開URLより優先して使われます。"),
