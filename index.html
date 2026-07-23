@@ -1904,11 +1904,11 @@ function buildStudentAccountCardsHtml(students, siteUrl, className, selectedTest
   `).join("");
     const qrInitHtml = students.map((s, i) => {
         const lines = [
-            `try { new QRCode(document.getElementById("qr_${i}"), { text: ${JSON.stringify(siteUrl)}, width: 80, height: 80, colorDark: "#1C2541", colorLight: "#F6F4EE" }); } catch(e){}`,
-            `try { new QRCode(document.getElementById("qrp_${i}"), { text: ${JSON.stringify(PORTAL_URL)}, width: 62, height: 62, colorDark: "#1C2541", colorLight: "#FCFBF8" }); } catch(e){}`,
+            `try { new QRCode(document.getElementById("qr_${i}"), { text: ${JSON.stringify(siteUrl)}, width: 66, height: 66, colorDark: "#1C2541", colorLight: "#F6F4EE" }); } catch(e){}`,
+            `try { new QRCode(document.getElementById("qrp_${i}"), { text: ${JSON.stringify(PORTAL_URL)}, width: 52, height: 52, colorDark: "#1C2541", colorLight: "#FCFBF8" }); } catch(e){}`,
         ];
         tests.forEach((t, j) => {
-            lines.push(`try { new QRCode(document.getElementById("qrt_${i}_${j}"), { text: ${JSON.stringify(t.url)}, width: 46, height: 46, colorDark: "#1C2541", colorLight: "#fff" }); } catch(e){}`);
+            lines.push(`try { new QRCode(document.getElementById("qrt_${i}_${j}"), { text: ${JSON.stringify(t.url)}, width: 40, height: 40, colorDark: "#1C2541", colorLight: "#fff" }); } catch(e){}`);
         });
         return lines.join("\n");
     }).join("\n");
@@ -1961,7 +1961,7 @@ function buildStudentAccountCardsHtml(students, siteUrl, className, selectedTest
   .onb-login-right{ flex-shrink:0; text-align:center; }
   .onb-qr{ width:66px; height:66px; border:1px solid #DCD8CC; margin:0 auto; }
   .onb-qr.small{ width:52px; height:52px; }
-  .onb-qr.xsmall{ width:38px; height:38px; }
+  .onb-qr.xsmall{ width:40px; height:40px; }
   .onb-qr-caption{ font-size:8.5px; color:#5B6685; margin-top:1.5mm; line-height:1.4; }
 
   .onb-portal{ display:flex; gap:8mm; background:#FCFBF8; border:1px solid #DCD8CC; padding:3.5mm 7mm; margin-bottom:3mm; align-items:center; }
