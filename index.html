@@ -493,9 +493,18 @@ function gradeFormRow(rowObj, test) {
     });
     return { score, qResults };
 }
+function extractSheetId(input) {
+    const s = String(input || "").trim();
+    const m = s.match(/\/d\/([a-zA-Z0-9_-]{20,})/);
+    if (m)
+        return m[1];
+    if (/^[a-zA-Z0-9_-]{20,}$/.test(s))
+        return s;
+    return "";
+}
 async function importFormResponses(test, students, scores, saveScoresForTest, notify) {
-    if (!test.formCsvUrl) {
-        notify("フォームCSVのURLが設定されていません");
+    if (!test.formSheetUrl && !test.formCsvUrl) {
+        notify("回答データの取得元（回答スプレッドシートのURL、またはCSV公開URL）が設定されていません");
         return;
     }
     if (!test.questions || !test.questions.length) {
@@ -503,29 +512,56 @@ async function importFormResponses(test, students, scores, saveScoresForTest, no
         return;
     }
     try {
-        const res = await fetch(test.formCsvUrl);
-        if (!res.ok) {
-            console.error("CSV取得失敗: HTTPステータス", res.status, test.formCsvUrl);
-            notify(`CSVの取得に失敗しました（HTTPステータス${res.status}）。「ウェブに公開」の設定と、公開されているシートがフォームの回答であることをご確認ください。`);
-            return;
+        let rows;
+        if (test.formSheetUrl) {
+            // 「ウェブに公開」を経由せず、Apps Script経由でスプレッドシートを直接読み取る方式（推奨）
+            const sheetId = extractSheetId(test.formSheetUrl);
+            if (!sheetId) {
+                notify("回答スプレッドシートのURLからIDを読み取れませんでした。URL全体をコピーして貼り付けてください。");
+                return;
+            }
+            if (!APPS_SCRIPT_URL || APPS_SCRIPT_URL.indexOf("PASTE_YOUR") === 0) {
+                notify("データ保存先(Apps ScriptのURL)が設定されていないため、この方法は使えません。");
+                return;
+            }
+            const url = `${APPS_SCRIPT_URL}?action=sheetRows&sheetId=${encodeURIComponent(sheetId)}`;
+            const res = await fetch(url);
+            if (!res.ok) {
+                console.error("回答シート取得失敗: HTTPステータス", res.status, url);
+                notify(`回答データの取得に失敗しました（HTTPステータス${res.status}）。バックエンドのApps Scriptが最新版になっているかご確認ください。`);
+                return;
+            }
+            const data = await res.json();
+            if (data && data.ok === false) {
+                console.error("回答シート取得失敗:", data);
+                notify(`回答データの取得に失敗しました：${data.detail || data.error}`);
+                return;
+            }
+            rows = data.rows || [];
         }
-        const text = await res.text();
-        // Googleが「ウェブに公開」未設定・非公開のシートに対して200番台でHTMLのログイン/エラーページを
-        // 返してくることがあるため、CSVらしい内容かどうかも簡易チェックする。
-        if (/<html[\s>]/i.test(text.slice(0, 200))) {
-            console.error("CSV取得失敗: HTMLが返ってきた（非公開の可能性）", test.formCsvUrl);
-            notify("CSVの代わりにHTMLページが返ってきました。スプレッドシートが「ウェブに公開」されていない可能性があります。公開設定をご確認のうえ、発行し直したURLを設定してください。");
-            return;
+        else {
+            const res = await fetch(test.formCsvUrl);
+            if (!res.ok) {
+                console.error("CSV取得失敗: HTTPステータス", res.status, test.formCsvUrl);
+                notify(`CSVの取得に失敗しました（HTTPステータス${res.status}）。「ウェブに公開」の設定と、公開されているシートがフォームの回答であることをご確認ください。`);
+                return;
+            }
+            const text = await res.text();
+            if (/<html[\s>]/i.test(text.slice(0, 200))) {
+                console.error("CSV取得失敗: HTMLが返ってきた（非公開の可能性）", test.formCsvUrl);
+                notify("CSVの代わりにHTMLページが返ってきました。スプレッドシートが「ウェブに公開」されていない可能性があります（学校のGoogleアカウントで管理者に禁止されている場合もあります）。「回答スプレッドシートのURL」欄を使う方法をお試しください。");
+                return;
+            }
+            rows = parseCsv(text);
         }
-        const rows = parseCsv(text);
         if (!rows.length) {
-            notify("CSVは取得できましたが、回答データが0件でした（生徒がまだフォームに回答していないか、公開されているシートが空の可能性があります）。");
+            notify("回答データを取得できましたが、0件でした（生徒がまだフォームに回答していないか、シートが空の可能性があります）。");
             return;
         }
         const idCol = test.formIdCol || "氏名";
         if (!(idCol in rows[0])) {
-            console.error("CSVヘッダーに一致する列が見つかりません", idCol, "実際の列名:", Object.keys(rows[0]));
-            notify(`「生徒照合用列のヘッダー名」に設定した「${idCol}」という列がCSVに見つかりませんでした。実際の列名: ${Object.keys(rows[0]).join(" / ")}`);
+            console.error("列名が見つかりません", idCol, "実際の列名:", Object.keys(rows[0]));
+            notify(`「生徒照合用列のヘッダー名」に設定した「${idCol}」という列が見つかりませんでした。実際の列名: ${Object.keys(rows[0]).join(" / ")}`);
             return;
         }
         let matched = 0, unmatched = [];
@@ -553,7 +589,7 @@ async function importFormResponses(test, students, scores, saveScoresForTest, no
     }
     catch (e) {
         console.error(e);
-        notify("フォーム回答の取り込みに失敗しました（CSV URLをご確認ください）");
+        notify("フォーム回答の取り込みに失敗しました");
     }
 }
 function computeQuestionStats(scores, students, test) {
@@ -2114,6 +2150,7 @@ function TestManager({ tests, saveTests, saveTestQuestions, saveScoresForTest, s
     const [qTestId, setQTestId] = useState("");
     const [qFormIdCol, setQFormIdCol] = useState("氏名");
     const [qFormCsvUrl, setQFormCsvUrl] = useState("");
+    const [qFormSheetUrl, setQFormSheetUrl] = useState("");
     const [questions, setQuestions] = useState([]);
     const [importing, setImporting] = useState(false);
     const [answerKeyText, setAnswerKeyText] = useState("");
@@ -2122,6 +2159,7 @@ function TestManager({ tests, saveTests, saveTestQuestions, saveScoresForTest, s
         const t = tests.find((x) => x.id === id);
         setQFormIdCol((t === null || t === void 0 ? void 0 : t.formIdCol) || "氏名");
         setQFormCsvUrl((t === null || t === void 0 ? void 0 : t.formCsvUrl) || "");
+        setQFormSheetUrl((t === null || t === void 0 ? void 0 : t.formSheetUrl) || "");
         setQuestions((t && t.questions && t.questions.length) ? t.questions.map((q) => ({ ...q })) : [blankQuestion()]);
         setAnswerKeyText("");
     }
@@ -2156,7 +2194,7 @@ function TestManager({ tests, saveTests, saveTestQuestions, saveScoresForTest, s
         if (!qTestId)
             return;
         const cleaned = questions.filter((q) => q.no.trim());
-        saveTestQuestions(qTestId, cleaned, { formCsvUrl: qFormCsvUrl.trim(), formIdCol: qFormIdCol.trim() || "氏名" });
+        saveTestQuestions(qTestId, cleaned, { formCsvUrl: qFormCsvUrl.trim(), formSheetUrl: qFormSheetUrl.trim(), formIdCol: qFormIdCol.trim() || "氏名" });
         notify("設問・採点設定を保存しました");
     }
     async function runImport() {
@@ -2287,13 +2325,14 @@ function TestManager({ tests, saveTests, saveTestQuestions, saveScoresForTest, s
                                 React.createElement(Icon, { name: "trash", size: 14 }))))))))))),
         React.createElement(QuestionSetupCard, {
             tests: tests, sortedForQ: sortedForQ, qTestId: qTestId, loadQuestionSetup: loadQuestionSetup,
-            qFormCsvUrl: qFormCsvUrl, setQFormCsvUrl: setQFormCsvUrl, qFormIdCol: qFormIdCol, setQFormIdCol: setQFormIdCol,
+            qFormCsvUrl: qFormCsvUrl, setQFormCsvUrl: setQFormCsvUrl, qFormSheetUrl: qFormSheetUrl, setQFormSheetUrl: setQFormSheetUrl,
+            qFormIdCol: qFormIdCol, setQFormIdCol: setQFormIdCol,
             questions: questions, updateQuestion: updateQuestion, addQuestionRow: addQuestionRow, removeQuestionRow: removeQuestionRow,
             saveQuestionSetup: saveQuestionSetup, runImport: runImport, importing: importing,
             answerKeyText: answerKeyText, setAnswerKeyText: setAnswerKeyText, generateFromAnswerKey: generateFromAnswerKey,
         })));
 }
-function QuestionSetupCard({ qTestId, sortedForQ, loadQuestionSetup, qFormCsvUrl, setQFormCsvUrl, qFormIdCol, setQFormIdCol, questions, updateQuestion, addQuestionRow, removeQuestionRow, saveQuestionSetup, runImport, importing, answerKeyText, setAnswerKeyText, generateFromAnswerKey }) {
+function QuestionSetupCard({ qTestId, sortedForQ, loadQuestionSetup, qFormCsvUrl, setQFormCsvUrl, qFormSheetUrl, setQFormSheetUrl, qFormIdCol, setQFormIdCol, questions, updateQuestion, addQuestionRow, removeQuestionRow, saveQuestionSetup, runImport, importing, answerKeyText, setAnswerKeyText, generateFromAnswerKey }) {
     const testOptions = [React.createElement("option", { key: "", value: "" }, "選択してください")].concat(sortedForQ.map((t) => React.createElement("option", { key: t.id, value: t.id }, t.name)));
     const questionRows = questions.map((q, idx) => {
         const cells = [
@@ -2314,9 +2353,13 @@ function QuestionSetupCard({ qTestId, sortedForQ, loadQuestionSetup, qFormCsvUrl
             React.createElement("select", { value: qTestId, onChange: (e) => loadQuestionSetup(e.target.value) }, testOptions)),
     ];
     if (qTestId) {
+        body.push(React.createElement("div", { key: "row1b", className: "field", style: { marginBottom: 10 } },
+            React.createElement("label", null, "回答スプレッドシートのURL（推奨・「ウェブに公開」不要）"),
+            React.createElement("div", { className: "sub", style: { marginTop: -2, marginBottom: 4 } }, "フォームの回答が入っているスプレッドシートを開いて、アドレスバーのURLをそのまま貼り付けてください（例：https://docs.google.com/spreadsheets/d/1AbCdE.../edit）。「ウェブに公開」の設定は不要です。学校のGoogleアカウントで「ウェブに公開」が管理者に禁止されている場合でも使えます。この欄を設定すると、下のCSV公開URLより優先して使われます。"),
+            React.createElement("input", { value: qFormSheetUrl, onChange: (e) => setQFormSheetUrl(e.target.value), placeholder: "https://docs.google.com/spreadsheets/d/xxxxxxxx/edit" })));
         body.push(React.createElement("div", { key: "row2", className: "row2" },
             React.createElement("div", { className: "field" },
-                React.createElement("label", null, "フォーム回答シートのCSV公開URL（ファイル→共有→ウェブに公開→CSV）"),
+                React.createElement("label", null, "（従来方式）フォーム回答シートのCSV公開URL（ファイル→共有→ウェブに公開→CSV）"),
                 React.createElement("input", { value: qFormCsvUrl, onChange: (e) => setQFormCsvUrl(e.target.value), placeholder: "https://docs.google.com/spreadsheets/d/e/.../pub?output=csv" })),
             React.createElement("div", { className: "field" },
                 React.createElement("label", null, "生徒照合用列のヘッダー名（フォームの質問文）"),
