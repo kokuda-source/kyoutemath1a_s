@@ -428,7 +428,7 @@ function parseAnswerKeyText(text, defaultMaxScore) {
         const line = lineRaw.trim();
         if (!line) return;
         const um = line.match(unitRe);
-        if (um) { unit = um[1].trim(); daimon = ""; return; }
+        if (um) { unit = zenkakuToHankakuDigits(um[1].trim()); daimon = ""; return; }
         const dm2 = line.match(daimonOnlyRe);
         if (dm2) { daimon = `第${zenkakuToHankakuDigits(dm2[1])}問`; return; }
         const bm = line.match(blankSimpleRe);
