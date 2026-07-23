@@ -564,6 +564,35 @@ async function importFormResponses(test, students, scores, saveScoresForTest, no
             notify(`「生徒照合用列のヘッダー名」に設定した「${idCol}」という列が見つかりませんでした。実際の列名: ${Object.keys(rows[0]).join(" / ")}`);
             return;
         }
+        // 設問側が期待している列名（＝Googleフォームの質問タイトルのはず）が、
+        // 実際のシートの列に存在するかを事前にチェックする。
+        // 見た目は同じでも全角/半角や余分な空白でズレていることがあるため、
+        // 一致しない列名をここで具体的に検出して知らせる。
+        const actualHeaders = Object.keys(rows[0]);
+        const actualHeaderSet = new Set(actualHeaders);
+        const expectedCols = [];
+        (test.questions || []).forEach((q) => {
+            if (q.letters && q.letters.length) {
+                q.letters.forEach((ch) => expectedCols.push([q.unit, q.daimon, ch].filter(Boolean).join(" ").trim()));
+            }
+            else {
+                expectedCols.push(q.no);
+            }
+        });
+        const missingCols = expectedCols.filter((c) => !actualHeaderSet.has(c));
+        let colWarning = "";
+        if (missingCols.length) {
+            console.warn(`設問の列名のうち ${missingCols.length}/${expectedCols.length} 件が、実際のシートの列に見つかりませんでした。`);
+            console.warn("見つからなかった列名（一部）:", missingCols.slice(0, 10));
+            console.warn("実際の列名一覧:", actualHeaders);
+            // 見つからなかった列名それぞれに対し、末尾の文字だけで比較して近い実際の列名を探す（全角/半角ズレ等の手がかりにする）
+            const sample = missingCols.slice(0, 3).map((c) => {
+                const tail = c.slice(-2);
+                const near = actualHeaders.find((h) => h !== c && h.endsWith(tail));
+                return near ? `「${c}」→近い実際の列名「${near}」` : `「${c}」に一致する列なし`;
+            });
+            colWarning = `／設問の列名${missingCols.length}/${expectedCols.length}件が回答シートと不一致（自動的に不正解扱い）。例：${sample.join("　")}`;
+        }
         let matched = 0, unmatched = [];
         const existing = scores.filter((sc) => sc.testId === test.id);
         const byStudent = {};
@@ -583,7 +612,7 @@ async function importFormResponses(test, students, scores, saveScoresForTest, no
         });
         const list = Object.values(byStudent);
         await saveScoresForTest(test.id, list);
-        notify(`フォーム回答を取り込みました（${matched}件${unmatched.length ? "／未一致" + unmatched.length + "件" : ""}）`);
+        notify(`フォーム回答を取り込みました（${matched}件${unmatched.length ? "／未一致" + unmatched.length + "件" : ""}${colWarning}）`);
         if (unmatched.length)
             console.warn("氏名が一致しなかった回答:", unmatched);
     }
