@@ -314,56 +314,99 @@ function zenkakuToHankakuDigits(s) {
     return String(s == null ? "" : s).replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
 }
 /**
- * 「単元名：◯◯」「第n問」「アイ：2,8」のような解答キーのテキストを、
- * 設問行（{no, maxScore, answer, practiceUrl, practiceLabel}）の配列にパースする。
- * no は "{単元名} 第{n}問 {文字}" の形式で生成する。この形式はGoogleフォーム側の
- * 質問タイトルとも一致させる必要がある（generate_form_from_answer_key.gs 参照）。
+ * 解答キーのテキストを、空欄グループ単位の設問（{no, unit, daimon, label, letters,
+ * answers, answer, maxScore, practiceUrl, practiceLabel}）の配列にパースする。
  *
- * 空欄グループの値は次の2通りの書き方を許容する：
- *   - カンマ区切り："エオカ：-,5,6" → エ=-, オ=5, カ=6
- *   - 文字数一致の連結表記："アイ：-6" → ア=-, イ=6（"-6"の2文字とアイの2文字が一致するため分解）
- * どちらとも解釈できない場合は、グループ全体を1つの設問として登録する（フォールバック）。
+ * 次の2つの書式のどちらか（または混在）を受け付ける：
+ *
+ * 【書式A：シンプル形式】
+ *   単元名：数と式
+ *   第１問
+ *   アイ：2,8
+ *   ケ：1
+ *   → 配点は指定できないため、defaultMaxScore（省略時5点）が一律で使われる。
+ *
+ * 【書式B：表形式（Excel/Wordの表をコピー＆ペーストしたタブ区切りテキスト）】
+ *   大問	記号	解答	配点
+ *   第1問	ア	3	2点
+ *  	イ	2	2点
+ *  	ウエ	5, 9	2点
+ *   → 行ごとに配点を指定できる。大問列が空欄の行は直前の大問を引き継ぐ。
+ *      「単元名：◯◯」の行は書式Aと同じ書き方で単元の区切りに使う。
+ *
+ * 空欄グループ（記号）内の値は次の2通りの書き方を許容する：
+ *   - カンマ区切り："エオカ：-,5,6" / "エオ	-, 3" → エ=-, オ=5, カ=6
+ *   - 文字数一致の連結表記："アイ：-6" / "アイ	-6" → ア=-, イ=6
+ *
+ * 生成される no（設問名）は "{単元名} 第{n}問 {記号}" の形式で、Googleフォーム側の
+ * 各空欄（1文字＝1設問）の質問タイトルの接頭辞と一致させる（generate_form_from_answer_key.gs 参照）。
+ * 採点は「グループ内の全空欄が正解した場合にのみ maxScore を加点する」オール・オア・ナッシング方式。
  */
 function parseAnswerKeyText(text, defaultMaxScore) {
-    const lines = String(text || "").split(/\r?\n/).map((l) => l.trim()).filter((l) => l.length > 0);
+    const rawLines = String(text || "").replace(/\r\n/g, "\n").split("\n");
     const unitRe = /^単元名\s*[:：]\s*(.+)$/;
-    const daimonRe = /^第\s*([0-9０-９一二三四五六七八九十]+)\s*問$/;
-    const blankRe = /^([\u3041-\u3096\u30A1-\u30FC]+)\s*[:：]\s*(.+)$/;
+    const daimonOnlyRe = /^第\s*([0-9０-９一二三四五六七八九十]+)\s*問$/;
+    const daimonCellRe = /^第\s*([0-9０-９一二三四五六七八九十]+)\s*問/;
+    const blankSimpleRe = /^([\u3041-\u3096\u30A1-\u30FC]+)\s*[:：]\s*(.+)$/;
     let unit = "";
     let daimon = "";
     const questions = [];
-    lines.forEach((line) => {
-        const um = line.match(unitRe);
-        if (um) { unit = um[1].trim(); return; }
-        const dm = line.match(daimonRe);
-        if (dm) { daimon = `第${zenkakuToHankakuDigits(dm[1])}問`; return; }
-        const bm = line.match(blankRe);
-        if (!bm) return;
-        const label = bm[1];
-        const rawValue = bm[2].trim();
+    function splitValues(raw, letterCount) {
+        const trimmed = String(raw == null ? "" : raw).trim();
+        if (/[,、]/.test(trimmed)) {
+            return trimmed.split(/[,、]/).map((v) => v.trim());
+        }
+        if (Array.from(trimmed).length === letterCount) {
+            return Array.from(trimmed);
+        }
+        return [trimmed];
+    }
+    function pushGroup(label, valuesRaw, maxScore) {
+        label = String(label || "").trim();
+        if (!label) return;
         const letters = Array.from(label);
-        let values = null;
-        if (/[,、]/.test(rawValue)) {
-            values = rawValue.split(/[,、]/).map((v) => v.trim());
-        }
-        else if (Array.from(rawValue).length === letters.length) {
-            values = Array.from(rawValue);
-        }
+        const values = splitValues(valuesRaw, letters.length);
         const prefix = [unit, daimon].filter(Boolean).join(" ");
-        if (values && values.length === letters.length && letters.length > 1) {
-            letters.forEach((ch, i) => {
-                questions.push({
-                    id: uid(), no: `${prefix} ${ch}`.trim(), maxScore: defaultMaxScore || 5,
-                    answer: values[i], practiceUrl: "", practiceLabel: "",
-                });
-            });
+        questions.push({
+            id: uid(),
+            no: `${prefix} ${label}`.trim(),
+            unit, daimon, label,
+            letters,
+            answers: values,
+            answer: values.join(", "),
+            maxScore: (maxScore != null && !isNaN(maxScore)) ? maxScore : (defaultMaxScore || 5),
+            practiceUrl: "", practiceLabel: "",
+        });
+    }
+    rawLines.forEach((lineRaw) => {
+        if (lineRaw.indexOf("\t") !== -1) {
+            const parts = lineRaw.split("\t").map((p) => p.trim());
+            if (parts[0] === "大問" && parts[1] === "記号") return; // 表のヘッダー行
+            if (parts.length >= 3 && (parts[1] || parts[0])) {
+                const daimonCell = parts[0];
+                const label = parts[1];
+                const valuesRaw = parts[2];
+                const scoreCell = parts[3] || "";
+                if (daimonCell) {
+                    const dm = daimonCell.match(daimonCellRe);
+                    daimon = dm ? `第${zenkakuToHankakuDigits(dm[1])}問` : daimonCell;
+                }
+                if (label) {
+                    const scoreMatch = zenkakuToHankakuDigits(scoreCell).match(/([0-9]+(?:\.[0-9]+)?)/);
+                    pushGroup(label, valuesRaw, scoreMatch ? Number(scoreMatch[1]) : null);
+                }
+                return;
+            }
         }
-        else {
-            questions.push({
-                id: uid(), no: `${prefix} ${label}`.trim(), maxScore: defaultMaxScore || 5,
-                answer: values ? values.join("") : rawValue, practiceUrl: "", practiceLabel: "",
-            });
-        }
+        const line = lineRaw.trim();
+        if (!line) return;
+        const um = line.match(unitRe);
+        if (um) { unit = um[1].trim(); daimon = ""; return; }
+        const dm2 = line.match(daimonOnlyRe);
+        if (dm2) { daimon = `第${zenkakuToHankakuDigits(dm2[1])}問`; return; }
+        const bm = line.match(blankSimpleRe);
+        if (bm) { pushGroup(bm[1], bm[2], null); return; }
+        // それ以外の行（「DAY１」等のタイトル行）は無視する
     });
     return questions;
 }
@@ -402,8 +445,21 @@ function gradeFormRow(rowObj, test) {
     const qResults = {};
     let score = 0;
     (test.questions || []).forEach((q) => {
-        const raw = rowObj[q.no];
-        const correct = raw != null && normalizeAnswer(raw) === normalizeAnswer(q.answer) && normalizeAnswer(q.answer) !== "";
+        let correct;
+        if (q.letters && q.letters.length) {
+            // グループ単位（オール・オア・ナッシング）：グループ内の全空欄が正解して初めて得点
+            correct = q.letters.every((ch, i) => {
+                const col = [q.unit, q.daimon, ch].filter(Boolean).join(" ").trim();
+                const raw = rowObj[col];
+                const expected = (q.answers && q.answers[i] != null) ? q.answers[i] : "";
+                return raw != null && normalizeAnswer(raw) === normalizeAnswer(expected) && normalizeAnswer(expected) !== "";
+            });
+        }
+        else {
+            // 従来形式（手動で1行ずつ追加した設問など）：no をそのままCSV列名として照合
+            const raw = rowObj[q.no];
+            correct = raw != null && normalizeAnswer(raw) === normalizeAnswer(q.answer) && normalizeAnswer(q.answer) !== "";
+        }
         qResults[q.id] = correct;
         if (correct)
             score += Number(q.maxScore) || 0;
@@ -2032,7 +2088,16 @@ function TestManager({ tests, saveTests, saveScoresForTest, scores, students, no
         notify(`解答キーから${parsed.length}件の設問を生成しました。内容を確認し「設定を保存」を押してください。`);
     }
     function updateQuestion(idx, field, value) {
-        setQuestions((prev) => prev.map((q, i) => (i === idx ? { ...q, [field]: value } : q)));
+        setQuestions((prev) => prev.map((q, i) => {
+            if (i !== idx)
+                return q;
+            const next = { ...q, [field]: value };
+            if (field === "answer") {
+                // 「正解」欄（カンマ区切り）を手編集した場合、グループ採点用のanswers配列も同期させる
+                next.answers = String(value).split(/[,、]/).map((v) => v.trim());
+            }
+            return next;
+        }));
     }
     function addQuestionRow() { setQuestions((prev) => [...prev, blankQuestion()]); }
     function removeQuestionRow(idx) { setQuestions((prev) => prev.filter((_, i) => i !== idx)); }
@@ -2182,7 +2247,7 @@ function QuestionSetupCard({ qTestId, sortedForQ, loadQuestionSetup, qFormCsvUrl
         const cells = [
             React.createElement("td", { key: "no" }, React.createElement("input", { value: q.no, onChange: (e) => updateQuestion(idx, "no", e.target.value), placeholder: "例）第1問(1)", style: { width: 110 } })),
             React.createElement("td", { key: "max" }, React.createElement("input", { type: "number", value: q.maxScore, onChange: (e) => updateQuestion(idx, "maxScore", Number(e.target.value) || 0), style: { width: 64 } })),
-            React.createElement("td", { key: "ans" }, React.createElement("input", { value: q.answer, onChange: (e) => updateQuestion(idx, "answer", e.target.value), placeholder: "正解", style: { width: 90 } })),
+            React.createElement("td", { key: "ans" }, React.createElement("input", { value: q.answer, onChange: (e) => updateQuestion(idx, "answer", e.target.value), placeholder: "例）5, 9", style: { width: 130 } })),
             React.createElement("td", { key: "url" }, React.createElement("input", { value: q.practiceUrl, onChange: (e) => updateQuestion(idx, "practiceUrl", e.target.value), placeholder: "https://...", style: { width: 160 } })),
             React.createElement("td", { key: "label" }, React.createElement("input", { value: q.practiceLabel, onChange: (e) => updateQuestion(idx, "practiceLabel", e.target.value), placeholder: "例）図形と計量演習", style: { width: 130 } })),
             React.createElement("td", { key: "del" }, React.createElement("button", { className: "btn danger", onClick: () => removeQuestionRow(idx) }, React.createElement(Icon, { name: "trash", size: 13 }))),
@@ -2207,11 +2272,11 @@ function QuestionSetupCard({ qTestId, sortedForQ, loadQuestionSetup, qFormCsvUrl
         body.push(React.createElement("div", { key: "note", className: "note", style: { fontSize: 11.5, color: "var(--ink-soft)", marginBottom: 10 } }, "※Googleフォームに「氏名（フルネーム）」質問を必須で用意し、登録済みの生徒名と完全一致するように入力してもらってください。各設問のフォーム質問文は下の「設問名」と完全一致させてください（例：数と式 第1問 ア）。"));
         body.push(React.createElement("div", { key: "akbox", className: "field", style: { marginBottom: 14 } },
             React.createElement("label", null, "解答キーから設問を一括生成（貼り付け）"),
-            React.createElement("div", { className: "sub", style: { marginTop: -2, marginBottom: 6 } }, "「単元名：◯◯」「第n問」「アイ：2,8」のような形式のテキストを貼り付けると、設問名・正解を自動生成します（配点は一律5点で登録されるので、必要に応じて後から調整してください）。生成後は必ず内容を確認してから「設定を保存」を押してください。"),
+            React.createElement("div", { className: "sub", style: { marginTop: -2, marginBottom: 6 } }, "「単元名：◯◯」「第n問」「アイ：2,8」のようなシンプルな形式、または「大問・記号・解答・配点」の表（Excel/Wordの表をそのままコピー＆ペースト）のどちらでも読み取れます。表形式で貼り付けた場合は、行ごとに指定した配点がそのまま反映されます（未指定の場合は一律5点）。生成後は必ず内容を確認してから「設定を保存」を押してください。"),
             React.createElement("textarea", {
                 value: answerKeyText, onChange: (e) => setAnswerKeyText(e.target.value), rows: 8,
-                placeholder: "単元名：数と式\n第１問\nアイ：2,8\nウエオカ：2,5,3,2\nキク：6,4\nケ：1\n第２問\n…",
-                style: { width: "100%", fontFamily: "ui-monospace, monospace", fontSize: 12.5, resize: "vertical" },
+                placeholder: "単元名：数と式\n第１問\nアイ：2,8\nウエオカ：2,5,3,2\n\nまたは表をそのまま貼り付け：\n大問\t記号\t解答\t配点\n第1問\tア\t3\t2点\n\tイ\t2\t2点",
+                style: { width: "100%", fontFamily: "ui-monospace, monospace", fontSize: 12.5, resize: "vertical", whiteSpace: "pre" },
             }),
             React.createElement("div", { style: { marginTop: 8 } },
                 React.createElement("button", { className: "btn ghost", onClick: generateFromAnswerKey },
