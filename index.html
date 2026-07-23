@@ -1872,7 +1872,7 @@ function buildStudentAccountCardsHtml(students, siteUrl, className, selectedTest
           </div>
         </div>`}
 
-        <div class="onb-sec-title" style="margin-top:9mm;">このクラスのページでできること</div>
+        <div class="onb-sec-title" style="margin-top:4mm;">このクラスのページでできること</div>
         <div class="onb-features">
           <div class="onb-feat"><div class="onb-feat-icon">1</div><div><div class="onb-feat-t">成績推移の確認</div><div class="onb-feat-d">テストの得点をクラス平均と比べながら、折れ線グラフで確認できます。</div></div></div>
           <div class="onb-feat"><div class="onb-feat-icon">2</div><div><div class="onb-feat-t">平均点との差異</div><div class="onb-feat-d">テストごとの得点・平均・差が一覧でき、問題PDFや教材にもすぐ移動できます。</div></div></div>
@@ -1934,64 +1934,65 @@ function buildStudentAccountCardsHtml(students, siteUrl, className, selectedTest
     background-size:6mm 6mm;
   }
   .onb-page:last-child{ page-break-after:auto; }
-  .onb-band{ position:absolute; top:0; left:0; width:100%; height:9mm; background:linear-gradient(90deg,#1C2541,#3E5C87); }
-  .onb-inner{ padding:14mm 16mm 10mm; }
+  .onb-band{ position:absolute; top:0; left:0; width:100%; height:7mm; background:linear-gradient(90deg,#1C2541,#3E5C87); }
+  .onb-inner{ padding:10mm 15mm 7mm; }
 
-  .onb-head{ display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid #1C2541; padding-bottom:5mm; margin-bottom:6mm; }
+  .onb-head{ display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid #1C2541; padding-bottom:3.5mm; margin-bottom:4mm; }
   .onb-head-left{ display:flex; align-items:center; gap:5mm; }
-  .onb-logo{ width:13mm; height:13mm; }
-  .onb-eyebrow{ font-family:'JetBrains Mono',monospace; font-size:9.5px; letter-spacing:.24em; color:#5B6685; }
-  .onb-classname{ font-family:'Zen Old Mincho',serif; font-weight:700; font-size:17px; color:#1C2541; margin-top:1mm; }
-  .onb-doctitle{ font-size:11px; font-weight:700; color:#B4842A; background:#F5EBD6; padding:2mm 5mm; border-radius:20px; }
+  .onb-logo{ width:11mm; height:11mm; }
+  .onb-eyebrow{ font-family:'JetBrains Mono',monospace; font-size:9px; letter-spacing:.24em; color:#5B6685; }
+  .onb-classname{ font-family:'Zen Old Mincho',serif; font-weight:700; font-size:15px; color:#1C2541; margin-top:0.8mm; }
+  .onb-doctitle{ font-size:10px; font-weight:700; color:#B4842A; background:#F5EBD6; padding:1.6mm 4.5mm; border-radius:20px; }
 
-  .onb-student{ margin-bottom:6mm; }
-  .onb-student-name{ font-family:'Zen Old Mincho',serif; font-size:28px; font-weight:900; color:#1C2541; }
-  .onb-student-suffix{ font-size:14px; font-weight:400; color:#5B6685; }
-  .onb-student-school{ font-size:11px; color:#5B6685; margin-top:1.2mm; }
+  .onb-student{ margin-bottom:3.5mm; }
+  .onb-student-name{ font-family:'Zen Old Mincho',serif; font-size:22px; font-weight:900; color:#1C2541; }
+  .onb-student-suffix{ font-size:13px; font-weight:400; color:#5B6685; }
+  .onb-student-school{ font-size:10px; color:#5B6685; margin-top:1mm; }
 
-  .onb-login{ display:flex; gap:10mm; background:#fff; border:1px solid #DCD8CC; padding:6mm 8mm; margin-bottom:4mm; align-items:center; }
+  .onb-login{ display:flex; gap:8mm; background:#fff; border:1px solid #DCD8CC; padding:4mm 7mm; margin-bottom:3mm; align-items:center; }
   .onb-login-left{ flex:1; }
-  .onb-sec-title{ font-family:'Zen Old Mincho',serif; font-size:13px; font-weight:700; color:#1C2541; margin-bottom:3mm; border-left:4px solid #1C2541; padding-left:3mm; }
-  table.onb-login-table{ width:100%; border-collapse:collapse; margin-bottom:3mm; }
-  table.onb-login-table th{ text-align:left; font-size:10.5px; color:#5B6685; font-weight:700; padding:1.5mm 3mm 1.5mm 0; width:24mm; vertical-align:top; }
-  table.onb-login-table td{ font-size:12px; padding:1.5mm 0; }
-  table.onb-login-table td.mono.small{ font-family:'JetBrains Mono',monospace; font-size:10px; word-break:break-all; color:#3A4258; }
-  .onb-pin{ font-family:'JetBrains Mono',monospace; font-size:18px; font-weight:700; letter-spacing:3px; background:#1C2541; color:#fff; padding:1.6mm 5mm; border-radius:3px; display:inline-block; }
-  .onb-login-note{ font-size:10px; color:#5B6685; line-height:1.7; }
+  .onb-sec-title{ font-family:'Zen Old Mincho',serif; font-size:12px; font-weight:700; color:#1C2541; margin-bottom:2mm; border-left:4px solid #1C2541; padding-left:3mm; }
+  table.onb-login-table{ width:100%; border-collapse:collapse; margin-bottom:2mm; }
+  table.onb-login-table th{ text-align:left; font-size:10px; color:#5B6685; font-weight:700; padding:1mm 3mm 1mm 0; width:22mm; vertical-align:top; }
+  table.onb-login-table td{ font-size:11px; padding:1mm 0; }
+  table.onb-login-table td.mono.small{ font-family:'JetBrains Mono',monospace; font-size:9.5px; word-break:break-all; color:#3A4258; }
+  .onb-pin{ font-family:'JetBrains Mono',monospace; font-size:16px; font-weight:700; letter-spacing:3px; background:#1C2541; color:#fff; padding:1.3mm 4.5mm; border-radius:3px; display:inline-block; }
+  .onb-login-note{ font-size:9.5px; color:#5B6685; line-height:1.55; }
   .onb-login-right{ flex-shrink:0; text-align:center; }
-  .onb-qr{ width:80px; height:80px; border:1px solid #DCD8CC; margin:0 auto; }
-  .onb-qr.small{ width:62px; height:62px; }
-  .onb-qr.xsmall{ width:46px; height:46px; }
-  .onb-qr-caption{ font-size:9px; color:#5B6685; margin-top:2mm; line-height:1.5; }
+  .onb-qr{ width:66px; height:66px; border:1px solid #DCD8CC; margin:0 auto; }
+  .onb-qr.small{ width:52px; height:52px; }
+  .onb-qr.xsmall{ width:38px; height:38px; }
+  .onb-qr-caption{ font-size:8.5px; color:#5B6685; margin-top:1.5mm; line-height:1.4; }
 
-  .onb-portal{ display:flex; gap:10mm; background:#FCFBF8; border:1px solid #DCD8CC; padding:5mm 8mm; margin-bottom:4mm; align-items:center; }
+  .onb-portal{ display:flex; gap:8mm; background:#FCFBF8; border:1px solid #DCD8CC; padding:3.5mm 7mm; margin-bottom:3mm; align-items:center; }
   .onb-portal-left{ flex:1; }
   .onb-portal-right{ flex-shrink:0; text-align:center; }
-  .onb-portal-desc{ font-size:10px; color:#5B6685; line-height:1.7; }
+  .onb-portal-desc{ font-size:9.5px; color:#5B6685; line-height:1.55; }
 
-  .onb-testforms{ background:#fff; border:1px solid #DCD8CC; padding:5mm 8mm; margin-bottom:7mm; }
-  .onb-testform-grid{ display:flex; flex-wrap:wrap; gap:5mm 6mm; margin-top:2mm; }
-  .onb-testform-item{ text-align:center; width:24mm; }
-  .onb-testform-name{ font-size:9px; color:#3A4258; margin-top:1.5mm; line-height:1.4; word-break:break-word; }
+  .onb-testforms{ background:#fff; border:1px solid #DCD8CC; padding:3mm 7mm; margin-bottom:3mm; display:flex; align-items:center; gap:6mm; }
+  .onb-testforms .onb-sec-title{ margin-bottom:0; flex-shrink:0; }
+  .onb-testform-grid{ display:flex; flex-wrap:wrap; gap:2.5mm 5mm; flex:1; }
+  .onb-testform-item{ text-align:center; width:19mm; }
+  .onb-testform-name{ font-size:8px; color:#3A4258; margin-top:1mm; line-height:1.3; word-break:break-word; }
 
-  .onb-features{ display:grid; grid-template-columns:1fr 1fr; gap:3mm 8mm; margin-bottom:7mm; }
-  .onb-feat{ display:flex; gap:3.5mm; align-items:flex-start; }
-  .onb-feat-icon{ width:6.5mm; height:6.5mm; border-radius:50%; background:#1C2541; color:#fff; font-family:'JetBrains Mono',monospace; font-size:9.5px; font-weight:700; display:flex; align-items:center; justify-content:center; flex-shrink:0; margin-top:0.5mm; }
-  .onb-feat-t{ font-size:11px; font-weight:700; color:#1C2541; margin-bottom:0.8mm; }
-  .onb-feat-d{ font-size:9.5px; color:#5B6685; line-height:1.55; }
+  .onb-features{ display:grid; grid-template-columns:1fr 1fr; gap:2mm 8mm; margin-bottom:4mm; }
+  .onb-feat{ display:flex; gap:3mm; align-items:flex-start; }
+  .onb-feat-icon{ width:6mm; height:6mm; border-radius:50%; background:#1C2541; color:#fff; font-family:'JetBrains Mono',monospace; font-size:9px; font-weight:700; display:flex; align-items:center; justify-content:center; flex-shrink:0; margin-top:0.5mm; }
+  .onb-feat-t{ font-size:10.5px; font-weight:700; color:#1C2541; margin-bottom:0.6mm; }
+  .onb-feat-d{ font-size:9px; color:#5B6685; line-height:1.4; }
 
-  .onb-steps{ margin-bottom:6mm; }
-  .onb-step-row{ display:flex; align-items:stretch; gap:3mm; margin-top:3mm; }
-  .onb-step{ flex:1; background:#F5EBD6; border-radius:2px; padding:3.5mm; }
-  .onb-step-num{ font-family:'JetBrains Mono',monospace; font-size:9.5px; font-weight:700; color:#B4842A; margin-bottom:1.3mm; }
-  .onb-step-t{ font-size:10px; color:#5C4310; line-height:1.55; }
-  .onb-step-arrow{ display:flex; align-items:center; color:#B4842A; font-size:15px; font-weight:700; }
+  .onb-steps{ margin-bottom:3.5mm; }
+  .onb-step-row{ display:flex; align-items:stretch; gap:3mm; margin-top:2mm; }
+  .onb-step{ flex:1; background:#F5EBD6; border-radius:2px; padding:2.5mm 3mm; }
+  .onb-step-num{ font-family:'JetBrains Mono',monospace; font-size:9px; font-weight:700; color:#B4842A; margin-bottom:1mm; }
+  .onb-step-t{ font-size:9.5px; color:#5C4310; line-height:1.45; }
+  .onb-step-arrow{ display:flex; align-items:center; color:#B4842A; font-size:14px; font-weight:700; }
 
-  .onb-warn{ background:#F7E7E7; border-left:3px solid #B23A48; color:#7A2E36; font-size:10.5px; line-height:1.7; padding:3.5mm 5mm; margin-bottom:6mm; }
+  .onb-warn{ background:#F7E7E7; border-left:3px solid #B23A48; color:#7A2E36; font-size:9.5px; line-height:1.5; padding:2.5mm 4.5mm; margin-bottom:3.5mm; }
 
-  .onb-foot{ display:flex; align-items:center; gap:5mm; border-top:1px solid #DCD8CC; padding-top:4mm; }
-  .onb-foot-logo{ height:7mm; width:auto; opacity:.85; }
-  .onb-foot-text{ font-size:9.5px; color:#8891AA; }
+  .onb-foot{ display:flex; align-items:center; gap:5mm; border-top:1px solid #DCD8CC; padding-top:3mm; }
+  .onb-foot-logo{ height:6mm; width:auto; opacity:.85; }
+  .onb-foot-text{ font-size:9px; color:#8891AA; }
 
   @media print{ .toolbar{ display:none; } }
 </style></head>
