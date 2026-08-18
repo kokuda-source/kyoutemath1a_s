@@ -408,8 +408,21 @@ function parseAnswerKeyText(text, defaultMaxScore) {
     rawLines.forEach((lineRaw) => {
         if (lineRaw.indexOf("\t") !== -1) {
             const parts = lineRaw.split("\t").map((p) => p.trim());
-            if (parts[0] === "大問" && parts[1] === "記号") return; // 表のヘッダー行
-            if (parts.length >= 3 && (parts[1] || parts[0])) {
+            // 表のヘッダー行はスキップ（「大問 記号 解答 配点」形式・「記号 解答 配点」形式のどちらも）
+            if (parts[0] === "大問" && parts[1] === "記号") return;
+            if (parts[0] === "記号" && (parts[1] === "解答" || parts[1] === "")) return;
+            if (parts.length === 3) {
+                // 大問列がなく「記号／解答／配点」の3列だけの表。大問は直前の「第n問」単独行を使う。
+                const label = parts[0];
+                const valuesRaw = parts[1];
+                const scoreCell = parts[2] || "";
+                if (label) {
+                    const scoreMatch = zenkakuToHankakuDigits(scoreCell).match(/([0-9]+(?:\.[0-9]+)?)/);
+                    pushGroup(label, valuesRaw, scoreMatch ? Number(scoreMatch[1]) : null);
+                }
+                return;
+            }
+            if (parts.length >= 4 && (parts[1] || parts[0])) {
                 const daimonCell = parts[0];
                 const label = parts[1];
                 const valuesRaw = parts[2];
@@ -2465,7 +2478,7 @@ function QuestionSetupCard({ qTestId, sortedForQ, loadQuestionSetup, qFormCsvUrl
         body.push(React.createElement("div", { key: "note", className: "note", style: { fontSize: 11.5, color: "var(--ink-soft)", marginBottom: 10 } }, "※Googleフォームに「氏名（フルネーム）」質問を必須で用意し、登録済みの生徒名と完全一致するように入力してもらってください。各設問のフォーム質問文は下の「設問名」と完全一致させてください（例：数と式 第1問 ア）。"));
         body.push(React.createElement("div", { key: "akbox", className: "field", style: { marginBottom: 14 } },
             React.createElement("label", null, "解答キーから設問を一括生成（貼り付け）"),
-            React.createElement("div", { className: "sub", style: { marginTop: -2, marginBottom: 6 } }, "「単元名：◯◯」「第n問」「アイ：2,8」のようなシンプルな形式、または「大問・記号・解答・配点」の表（Excel/Wordの表をそのままコピー＆ペースト）のどちらでも読み取れます。表形式で貼り付けた場合は、行ごとに指定した配点がそのまま反映されます（未指定の場合は一律5点）。生成後は必ず内容を確認してから「設定を保存」を押してください。"),
+            React.createElement("div", { className: "sub", style: { marginTop: -2, marginBottom: 6 } }, "「単元名：◯◯」「第n問」「アイ：2,8」のようなシンプルな形式、または「大問・記号・解答・配点」（もしくは大問列なしの「記号・解答・配点」＋別行の「第n問」）の表（Excel/Wordの表をそのままコピー＆ペースト）のいずれでも読み取れます。表形式で貼り付けた場合は、行ごとに指定した配点がそのまま反映されます（未指定の場合は一律5点）。生成後は必ず内容を確認してから「設定を保存」を押してください。"),
             React.createElement("textarea", {
                 value: answerKeyText, onChange: (e) => setAnswerKeyText(e.target.value), rows: 8,
                 placeholder: "単元名：数と式\n第１問\nアイ：2,8\nウエオカ：2,5,3,2\n\nまたは表をそのまま貼り付け：\n大問\t記号\t解答\t配点\n第1問\tア\t3\t2点\n\tイ\t2\t2点",
